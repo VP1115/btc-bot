@@ -1,5 +1,5 @@
 {
-  "strategy": "balanced",
+  "strategy": "aggressive",
   "symbol": "ETHEUR",
   "balance": 2000.0,
   "coin_held": 0.0,

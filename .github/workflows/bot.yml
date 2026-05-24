@@ -33,7 +33,7 @@ jobs:
       - name: Run ETH check
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
-          python3 bot.py balanced 4032 0 ETH 2000
+          python3 bot.py aggressive 4032 0 ETH 2000
           AFTER=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
           echo "ETH: $BEFORE -> $AFTER"
           [ "$BEFORE" != "$AFTER" ] || (cat bot_ETH.log | tail -10 && exit 1)
