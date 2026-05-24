@@ -58,8 +58,13 @@ MIN_TRADE_EUR = 5.0
 KRAKEN_PAIR_MAP = {
     'BTCEUR':  'XBTEUR',  'BTCUSDT':  'XBTUSD',
     'ETHEUR':  'ETHEUR',  'ETHUSDT':  'ETHUSD',
-    'SOLEUR':  'SOLEUR',  'SOLUSDT':  'SOLUSD',
-    'BNBEUR':  'BNBEUR',  'ADAEUR':   'ADAEUR',
+}
+
+COINGECKO_IDS = {
+    'BTCEUR': 'bitcoin',   'BTCUSDT': 'bitcoin',
+    'ETHEUR': 'ethereum',  'ETHUSDT': 'ethereum',
+    'SOLEUR': 'solana',    'SOLUSDT': 'solana',
+    'BNBEUR': 'binancecoin', 'ADAEUR': 'cardano',
 }
 
 # Set dynamically in main()
@@ -120,7 +125,9 @@ def detect_symbol(name='BTC'):
     return f'{name}EUR'
 
 def fetch_closes_kraken(symbol, limit=120):
-    pair = KRAKEN_PAIR_MAP.get(symbol, symbol)
+    pair = KRAKEN_PAIR_MAP.get(symbol)
+    if not pair:
+        raise RuntimeError(f'No Kraken mapping for {symbol}')
     url  = f'https://api.kraken.com/0/public/OHLC?pair={pair}&interval=15'
     data = _get_json(url)
     if data.get('error') and data['error']:
@@ -128,14 +135,30 @@ def fetch_closes_kraken(symbol, limit=120):
     pair_key = next(k for k in data['result'] if k != 'last')
     return [float(c[4]) for c in data['result'][pair_key][-limit:]]
 
+def fetch_closes_coingecko(symbol, limit=120):
+    coin_id  = COINGECKO_IDS.get(symbol)
+    if not coin_id:
+        raise RuntimeError(f'No CoinGecko mapping for {symbol}')
+    currency = 'eur' if symbol.endswith('EUR') else 'usd'
+    url  = f'https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency={currency}&days=7&interval=hourly'
+    data = _get_json(url)
+    return [p[1] for p in data['prices'][-limit:]]
+
 def fetch_closes(symbol, limit=120):
-    try:
-        url     = f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}'
-        candles = _get_json(url, retries=2)
-        return [float(c[4]) for c in candles]
-    except Exception as e:
-        log.warning(f'Binance unavailable ({e}), switching to Kraken')
-        return fetch_closes_kraken(symbol, limit)
+    for source, fn in [
+        ('Binance',    lambda: [float(c[4]) for c in _get_json(f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}', retries=2)]),
+        ('Kraken',     lambda: fetch_closes_kraken(symbol, limit)),
+        ('CoinGecko',  lambda: fetch_closes_coingecko(symbol, limit)),
+    ]:
+        try:
+            prices = fn()
+            if prices:
+                if source != 'Binance':
+                    log.info(f'Using {source} for {symbol}')
+                return prices
+        except Exception as e:
+            log.warning(f'{source} failed for {symbol}: {e}')
+    raise RuntimeError(f'All price sources failed for {symbol}')
 
 # ── Technical Indicators ───────────────────────────────────────────────────────
 
