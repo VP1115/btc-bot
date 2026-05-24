@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Bitcoin Paper Trading Bot
-Usage : python3 bot.py <strategy> <max_checks> <interval_seconds>
-Example: python3 bot.py aggressive 336 3600   # 2 weeks, hourly
-Delete state.json to start a fresh run.
+Crypto Paper Trading Bot
+Usage : python3 bot.py <strategy> <max_checks> <interval_seconds> [name] [starting_balance]
+Example: python3 bot.py aggressive 4032 0 BTC 2000
+         python3 bot.py balanced   4032 0 ETH 2000
+         python3 bot.py aggressive 4032 0 SOL 1000
+Delete state_<NAME>.json to start that asset fresh.
 """
 
 import json
@@ -15,22 +17,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-
-STARTING_BALANCE = 1000.0          # EUR
-MIN_TRADE_EUR    = 5.0             # skip trades smaller than this
-STATE_FILE       = 'state.json'
-TRADES_FILE      = 'trades.json'
-LOG_FILE         = 'bot.log'
-BINANCE_BASE     = 'https://api.binance.com/api/v3'
-
 # ── Strategy Profiles ──────────────────────────────────────────────────────────
-#
-#  rsi_oversold   – buy  when RSI drops below this
-#  rsi_overbought – sell when RSI rises above this
-#  position_pct   – fraction of available cash (buy) or BTC (sell) to use
-#  ma_short/long  – periods for the two simple moving averages
-#  require_ma     – if True both RSI AND MA alignment must agree to trade
 
 STRATEGIES = {
     'aggressive': {
@@ -65,9 +52,26 @@ STRATEGIES = {
     },
 }
 
+BINANCE_BASE = 'https://api.binance.com/api/v3'
+MIN_TRADE_EUR = 5.0
+
+KRAKEN_PAIR_MAP = {
+    'BTCEUR':  'XBTEUR',  'BTCUSDT':  'XBTUSD',
+    'ETHEUR':  'ETHEUR',  'ETHUSDT':  'ETHUSD',
+    'SOLEUR':  'SOLEUR',  'SOLUSDT':  'SOLUSD',
+    'BNBEUR':  'BNBEUR',  'ADAEUR':   'ADAEUR',
+}
+
+# Set dynamically in main()
+STATE_FILE  = 'state_BTC.json'
+TRADES_FILE = 'trades_BTC.json'
+LOG_FILE    = 'bot.log'
+
 # ── Logging ────────────────────────────────────────────────────────────────────
 
-def setup_logging():
+def setup_logging(name):
+    global LOG_FILE
+    LOG_FILE = f'bot_{name}.log'
     fmt = '%(asctime)s  %(levelname)-7s  %(message)s'
     logging.basicConfig(
         level=logging.INFO,
@@ -81,7 +85,7 @@ def setup_logging():
 
 log = logging.getLogger('btcbot')
 
-# ── Binance Helpers ────────────────────────────────────────────────────────────
+# ── API Helpers ────────────────────────────────────────────────────────────────
 
 def _get_json(url, retries=3):
     for attempt in range(1, retries + 1):
@@ -90,83 +94,80 @@ def _get_json(url, retries=3):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return json.loads(resp.read())
         except urllib.error.HTTPError as e:
-            log.warning(f'HTTP {e.code} on attempt {attempt}/{retries}: {url}')
+            log.warning(f'HTTP {e.code} attempt {attempt}/{retries}')
         except Exception as e:
             log.warning(f'Network error attempt {attempt}/{retries}: {e}')
         if attempt < retries:
             time.sleep(5 * attempt)
     raise RuntimeError(f'Failed after {retries} attempts: {url}')
 
-def detect_symbol():
-    """Prefer BTCEUR; fall back to BTCUSDT if unavailable."""
-    for sym in ('BTCEUR', 'BTCUSDT'):
+def detect_symbol(name='BTC'):
+    candidates = {
+        'BTC': ('BTCEUR', 'BTCUSDT'),
+        'ETH': ('ETHEUR', 'ETHUSDT'),
+        'SOL': ('SOLEUR', 'SOLUSDT'),
+        'BNB': ('BNBEUR', 'BNBUSDT'),
+        'ADA': ('ADAEUR', 'ADAUSDT'),
+    }.get(name.upper(), (f'{name}EUR', f'{name}USDT'))
+
+    for sym in candidates:
         try:
             _get_json(f'{BINANCE_BASE}/ticker/price?symbol={sym}')
+            log.info(f'Symbol detected: {sym}')
             return sym
         except Exception:
             continue
-    raise RuntimeError('Cannot reach Binance API. Check your internet connection.')
+    return f'{name}EUR'
 
-def fetch_closes_kraken(limit=120):
-    """Fallback price source — less IP-restrictive than Binance."""
-    url = 'https://api.kraken.com/0/public/OHLC?pair=XBTEUR&interval=15'
+def fetch_closes_kraken(symbol, limit=120):
+    pair = KRAKEN_PAIR_MAP.get(symbol, symbol)
+    url  = f'https://api.kraken.com/0/public/OHLC?pair={pair}&interval=15'
     data = _get_json(url)
-    if data.get('error'):
-        raise RuntimeError(f'Kraken error: {data["error"]}')
+    if data.get('error') and data['error']:
+        raise RuntimeError(f'Kraken: {data["error"]}')
     pair_key = next(k for k in data['result'] if k != 'last')
     return [float(c[4]) for c in data['result'][pair_key][-limit:]]
 
-def fetch_closes(symbol, interval='15m', limit=120):
-    """Return close prices — tries Binance first, falls back to Kraken."""
+def fetch_closes(symbol, limit=120):
     try:
-        url = f'{BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}'
+        url     = f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}'
         candles = _get_json(url, retries=2)
         return [float(c[4]) for c in candles]
     except Exception as e:
         log.warning(f'Binance unavailable ({e}), switching to Kraken')
-        return fetch_closes_kraken(limit)
+        return fetch_closes_kraken(symbol, limit)
 
 # ── Technical Indicators ───────────────────────────────────────────────────────
 
 def calc_rsi(prices, period=14):
-    """Wilder's smoothed RSI. Returns None if insufficient data."""
     if len(prices) < period + 1:
         return None
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     gains  = [max(d, 0.0) for d in deltas]
     losses = [max(-d, 0.0) for d in deltas]
-
-    avg_g = sum(gains[:period]) / period
-    avg_l = sum(losses[:period]) / period
+    avg_g  = sum(gains[:period]) / period
+    avg_l  = sum(losses[:period]) / period
     for i in range(period, len(deltas)):
         avg_g = (avg_g * (period - 1) + gains[i]) / period
         avg_l = (avg_l * (period - 1) + losses[i]) / period
-
     if avg_l == 0:
         return 100.0
     return 100.0 - 100.0 / (1.0 + avg_g / avg_l)
 
 def calc_sma(prices, period):
-    """Simple moving average of the last `period` prices. None if too short."""
     if len(prices) < period:
         return None
     return sum(prices[-period:]) / period
 
-# ── Signal Logic ───────────────────────────────────────────────────────────────
-
 def get_signal(prices, strategy):
-    """
-    Returns (signal, indicators_dict).
-    signal is one of: 'BUY', 'SELL', 'HOLD'
-    """
     cfg    = STRATEGIES[strategy]
     needed = cfg['ma_long'] + cfg['rsi_period'] + 5
     if len(prices) < needed:
-        return 'HOLD', {'note': f'warming up, need {needed} prices, have {len(prices)}'}
+        return 'HOLD', {'note': f'warming up ({len(prices)}/{needed})'}
 
-    r     = calc_rsi(prices, cfg['rsi_period'])
-    ma_s  = calc_sma(prices, cfg['ma_short'])
-    ma_l  = calc_sma(prices, cfg['ma_long'])
+    r    = calc_rsi(prices, cfg['rsi_period'])
+    ma_s = calc_sma(prices, cfg['ma_short'])
+    ma_l = calc_sma(prices, cfg['ma_long'])
 
     bullish = ma_s is not None and ma_l is not None and ma_s > ma_l
     bearish = ma_s is not None and ma_l is not None and ma_s < ma_l
@@ -190,39 +191,37 @@ def get_signal(prices, strategy):
 
 # ── State Persistence ──────────────────────────────────────────────────────────
 
-def load_state(strategy):
+def load_state(strategy, starting_balance):
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, encoding='utf-8') as f:
             state = json.load(f)
-        saved_strat = state.get('strategy', strategy)
-        if saved_strat != strategy:
-            log.warning(
-                f"State file uses strategy='{saved_strat}', not '{strategy}'. "
-                "Continuing with saved strategy. Delete state.json to start fresh."
-            )
+        if state.get('strategy') != strategy:
+            log.warning(f"Saved strategy={state['strategy']} differs from arg={strategy}. Using saved.")
         return state
 
     return {
-        'strategy':     strategy,
-        'symbol':       '',
-        'balance':      STARTING_BALANCE,
-        'btc_held':     0.0,
-        'checks_done':  0,
-        'total_trades': 0,
-        'buys':         0,
-        'sells':        0,
-        'start_time':   datetime.now(timezone.utc).isoformat(),
-        'last_check':   None,
-        'last_price':   None,
-        'peak_value':   STARTING_BALANCE,
-        'trough_value': STARTING_BALANCE,
+        'strategy':         strategy,
+        'symbol':           '',
+        'balance':          starting_balance,
+        'coin_held':        0.0,
+        'checks_done':      0,
+        'total_trades':     0,
+        'buys':             0,
+        'sells':            0,
+        'start_time':       datetime.now(timezone.utc).isoformat(),
+        'last_check':       None,
+        'last_price':       None,
+        'last_rsi':         None,
+        'peak_value':       starting_balance,
+        'trough_value':     starting_balance,
+        'starting_balance': starting_balance,
     }
 
 def _atomic_write(path, data):
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
-    os.replace(tmp, path)   # atomic on POSIX
+    os.replace(tmp, path)
 
 def save_state(state):
     _atomic_write(STATE_FILE, state)
@@ -238,141 +237,118 @@ def append_trade(trade):
 # ── Trade Execution ────────────────────────────────────────────────────────────
 
 def execute_trade(signal, state, price, cfg, check_num):
-    """Mutates state in-place. Returns a trade dict or None."""
     ts = datetime.now(timezone.utc).isoformat()
 
     if signal == 'BUY' and state['balance'] >= MIN_TRADE_EUR:
         eur_in   = state['balance'] * cfg['position_pct']
-        btc_out  = eur_in / price
-        state['balance']  -= eur_in
-        state['btc_held'] += btc_out
+        coin_out = eur_in / price
+        state['balance']   -= eur_in
+        state['coin_held'] += coin_out
         state['total_trades'] += 1
         state['buys'] += 1
-        log.info(f'  >> BUY  €{eur_in:>10,.2f} → {btc_out:.6f} BTC  @  €{price:,.2f}')
+        log.info(f'  >> BUY  €{eur_in:>10,.2f} → {coin_out:.6f}  @  €{price:,.2f}')
         return {
             'type': 'BUY', 'check': check_num, 'timestamp': ts,
             'price': price, 'eur_spent': round(eur_in, 4),
-            'btc_bought': round(btc_out, 8),
+            'coin_bought': round(coin_out, 8),
             'balance_after': round(state['balance'], 4),
-            'btc_after': round(state['btc_held'], 8),
+            'coin_after': round(state['coin_held'], 8),
         }
 
-    if signal == 'SELL' and state['btc_held'] > 1e-9:
-        btc_out  = state['btc_held'] * cfg['position_pct']
-        eur_in   = btc_out * price
-        state['btc_held'] -= btc_out
-        state['balance']  += eur_in
+    if signal == 'SELL' and state['coin_held'] > 1e-9:
+        coin_out = state['coin_held'] * cfg['position_pct']
+        eur_in   = coin_out * price
+        state['coin_held'] -= coin_out
+        state['balance']   += eur_in
         state['total_trades'] += 1
         state['sells'] += 1
-        log.info(f'  >> SELL {btc_out:.6f} BTC → €{eur_in:>10,.2f}  @  €{price:,.2f}')
+        log.info(f'  >> SELL {coin_out:.6f} → €{eur_in:>10,.2f}  @  €{price:,.2f}')
         return {
             'type': 'SELL', 'check': check_num, 'timestamp': ts,
             'price': price, 'eur_received': round(eur_in, 4),
-            'btc_sold': round(btc_out, 8),
+            'coin_sold': round(coin_out, 8),
             'balance_after': round(state['balance'], 4),
-            'btc_after': round(state['btc_held'], 8),
+            'coin_after': round(state['coin_held'], 8),
         }
 
-    log.info(f'  >> HOLD')
+    log.info('  >> HOLD')
     return None
 
-# ── Main Loop ──────────────────────────────────────────────────────────────────
-
-def print_summary(state, max_checks, interval):
-    price_f  = state.get('last_price') or 0
-    total    = state['balance'] + state['btc_held'] * price_f
-    pnl      = total - STARTING_BALANCE
-    pnl_pct  = pnl / STARTING_BALANCE * 100
-    bar      = '=' * 64
-    log.info(f'\n{bar}')
-    log.info('FINAL SUMMARY')
-    log.info(f'  Strategy     : {state["strategy"]}')
-    log.info(f'  Symbol       : {state["symbol"]}')
-    log.info(f'  Run          : {state["checks_done"]} checks x {interval}s')
-    log.info(f'  Final value  : €{total:,.2f}')
-    log.info(f'  P&L          : {pnl:+,.2f} EUR  ({pnl_pct:+.2f}%)')
-    log.info(f'  Peak         : €{state["peak_value"]:,.2f}')
-    log.info(f'  Trough       : €{state["trough_value"]:,.2f}')
-    log.info(f'  Total trades : {state["total_trades"]}  '
-             f'(buy={state["buys"]}  sell={state["sells"]})')
-    log.info(f'  Cash left    : €{state["balance"]:,.2f}')
-    log.info(f'  BTC held     : {state["btc_held"]:.8f}')
-    log.info(bar)
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
+    global STATE_FILE, TRADES_FILE
+
     if len(sys.argv) < 4:
-        print('Usage : python3 bot.py <strategy> <max_checks> <interval_seconds>')
-        print('Example: python3 bot.py aggressive 336 3600')
-        print(f'Strategies: {", ".join(STRATEGIES)}')
+        print('Usage: python3 bot.py <strategy> <max_checks> <interval> [name] [starting_balance]')
         sys.exit(1)
 
-    arg_strategy = sys.argv[1].lower()
-    max_checks   = int(sys.argv[2])
-    interval     = int(sys.argv[3])
+    arg_strategy      = sys.argv[1].lower()
+    max_checks        = int(sys.argv[2])
+    interval          = int(sys.argv[3])
+    name              = sys.argv[4].upper() if len(sys.argv) > 4 else 'BTC'
+    starting_balance  = float(sys.argv[5]) if len(sys.argv) > 5 else 1000.0
 
     if arg_strategy not in STRATEGIES:
-        print(f'Unknown strategy "{arg_strategy}". Choose: {", ".join(STRATEGIES)}')
+        print(f'Unknown strategy. Choose: {", ".join(STRATEGIES)}')
         sys.exit(1)
 
-    setup_logging()
+    STATE_FILE  = f'state_{name}.json'
+    TRADES_FILE = f'trades_{name}.json'
 
-    state    = load_state(arg_strategy)
-    strategy = state['strategy']          # honour saved strategy on resume
+    setup_logging(name)
+
+    state    = load_state(arg_strategy, starting_balance)
+    strategy = state['strategy']
     cfg      = STRATEGIES[strategy]
+    start    = state.get('starting_balance', starting_balance)
+
     state['max_checks'] = max_checks
-    if interval > 0:                      # don't overwrite with 0 in one-shot mode
+    if interval > 0:
         state['interval'] = interval
 
+    # Migrate old 'btc_held' key to generic 'coin_held'
+    if 'btc_held' in state and 'coin_held' not in state:
+        state['coin_held'] = state.pop('btc_held')
+
     if not state.get('symbol'):
-        state['symbol'] = detect_symbol()
+        state['symbol'] = detect_symbol(name)
         save_state(state)
     symbol = state['symbol']
 
-    currency = 'EUR' if symbol.endswith('EUR') else 'USD'
     kline_limit = max(cfg['ma_long'] + cfg['rsi_period'] + 20, 120)
 
     bar = '=' * 64
     log.info(bar)
-    log.info(f'Bitcoin Paper Trading Bot   strategy={strategy}   {symbol}')
+    log.info(f'Crypto Paper Trading Bot  [{name}]  strategy={strategy}  {symbol}')
     log.info(f'  {cfg["desc"]}')
-    log.info(f'  RSI thresholds : buy<{cfg["rsi_oversold"]}  sell>{cfg["rsi_overbought"]}')
-    log.info(f'  MA periods     : short={cfg["ma_short"]}  long={cfg["ma_long"]}')
-    log.info(f'  Position size  : {int(cfg["position_pct"]*100)}%  |  MA confirm: {cfg["require_ma"]}')
-    log.info(f'  Checks: {state["checks_done"]}/{max_checks}  |  Interval: {interval}s')
-    log.info(f'  Starting balance : {STARTING_BALANCE} {currency}')
-    log.info(f'  Current balance  : €{state["balance"]:.2f}  |  BTC: {state["btc_held"]:.8f}')
+    log.info(f'  Budget: €{start:,.0f}  |  Checks: {state["checks_done"]}/{max_checks}')
+    log.info(f'  Cash: €{state["balance"]:.2f}  |  Held: {state["coin_held"]:.6f}')
     log.info(bar)
 
     while state['checks_done'] < max_checks:
         check_num = state['checks_done'] + 1
-        now_str   = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        log.info(f'\n-- Check {check_num}/{max_checks}  [{now_str}] --')
+        log.info(f'\n-- [{name}] Check {check_num}/{max_checks}  [{datetime.now().strftime("%H:%M:%S")}] --')
 
         try:
             prices = fetch_closes(symbol, limit=kline_limit)
             price  = prices[-1]
-
             signal, ind = get_signal(prices, strategy)
 
             log.info(
                 f'  Price: €{price:>10,.2f}  |  RSI: {str(ind.get("rsi")):>6}  '
                 f'|  MA{cfg["ma_short"]}: {str(ind.get("ma_short")):>10}  '
-                f'|  MA{cfg["ma_long"]}: {str(ind.get("ma_long")):>10}  '
                 f'|  Signal: {signal}'
             )
 
-            portfolio = state['balance'] + state['btc_held'] * price
-            log.info(
-                f'  Portfolio: €{portfolio:>10,.2f}  '
-                f'(cash €{state["balance"]:,.2f}  +  '
-                f'{state["btc_held"]:.6f} BTC = €{state["btc_held"] * price:,.2f})'
-            )
+            portfolio = state['balance'] + state['coin_held'] * price
+            log.info(f'  Portfolio: €{portfolio:>10,.2f}  (cash €{state["balance"]:,.2f} + coin €{state["coin_held"]*price:,.2f})')
 
             trade = execute_trade(signal, state, price, cfg, check_num)
             if trade:
                 append_trade(trade)
 
-            portfolio_after = state['balance'] + state['btc_held'] * price
+            portfolio_after       = state['balance'] + state['coin_held'] * price
             state['peak_value']   = max(state['peak_value'],   portfolio_after)
             state['trough_value'] = min(state['trough_value'], portfolio_after)
             state['checks_done'] += 1
@@ -381,26 +357,28 @@ def main():
             state['last_rsi']    = ind.get('rsi')
             save_state(state)
 
-            pnl     = portfolio_after - STARTING_BALANCE
-            pnl_pct = pnl / STARTING_BALANCE * 100
-            log.info(f'  P&L: {pnl:+,.2f} {currency}  ({pnl_pct:+.2f}%)')
+            pnl     = portfolio_after - start
+            pnl_pct = pnl / start * 100
+            log.info(f'  P&L: {pnl:+,.2f} EUR  ({pnl_pct:+.2f}%)')
 
         except KeyboardInterrupt:
-            log.info('\nInterrupted by user. Progress saved.')
-            print_summary(state, max_checks, interval)
+            log.info('Interrupted. Progress saved.')
             sys.exit(0)
         except Exception as e:
-            log.error(f'  Check failed: {e} — skipping, state NOT advanced')
+            log.error(f'  Check failed: {e}')
 
         if state['checks_done'] < max_checks:
             if interval == 0:
-                break   # run-once mode (used by GitHub Actions)
+                break
             wake_at = time.time() + interval
             log.info(f'  Sleeping {interval}s (next at {datetime.fromtimestamp(wake_at).strftime("%H:%M:%S")}) …')
             while time.time() < wake_at:
                 time.sleep(10)
 
-    print_summary(state, max_checks, interval)
+    price_f = state.get('last_price') or 0
+    total   = state['balance'] + state['coin_held'] * price_f
+    pnl     = total - start
+    log.info(f'\n[{name}] DONE  value=€{total:,.2f}  P&L={pnl:+,.2f} EUR  trades={state["total_trades"]}')
 
 if __name__ == '__main__':
     main()

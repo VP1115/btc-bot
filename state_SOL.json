@@ -1,0 +1,19 @@
+{
+  "strategy": "aggressive",
+  "symbol": "",
+  "balance": 1000.0,
+  "coin_held": 0.0,
+  "checks_done": 0,
+  "total_trades": 0,
+  "buys": 0,
+  "sells": 0,
+  "start_time": "2026-05-24T20:08:51.073284+00:00",
+  "last_check": null,
+  "last_price": null,
+  "last_rsi": null,
+  "peak_value": 1000.0,
+  "trough_value": 1000.0,
+  "starting_balance": 1000.0,
+  "max_checks": 4032,
+  "interval": 300
+}

@@ -2,12 +2,12 @@ name: BTC Trading Bot
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # every 5 minutes
-  workflow_dispatch:          # manual trigger from GitHub UI
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 concurrency:
   group: btcbot
-  cancel-in-progress: false  # queue runs, never run two at once
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -22,29 +22,45 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run one check
+      - name: Run BTC check
         run: |
-          BEFORE=$(python3 -c "import json; print(json.load(open('state.json'))['checks_done'])")
-          python3 bot.py aggressive 4032 0
-          AFTER=$(python3 -c "import json; print(json.load(open('state.json'))['checks_done'])")
-          echo "checks: $BEFORE -> $AFTER"
-          if [ "$BEFORE" = "$AFTER" ]; then
-            echo "ERROR: check did not execute — bot failed silently"
-            cat bot.log | tail -20
-            exit 1
-          fi
+          BEFORE=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
+          python3 bot.py aggressive 4032 0 BTC 2000
+          AFTER=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
+          echo "BTC: $BEFORE -> $AFTER"
+          [ "$BEFORE" != "$AFTER" ] || (cat bot_BTC.log | tail -10 && exit 1)
 
-      - name: Commit updated state
+      - name: Run ETH check
+        run: |
+          BEFORE=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
+          python3 bot.py balanced 4032 0 ETH 2000
+          AFTER=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
+          echo "ETH: $BEFORE -> $AFTER"
+          [ "$BEFORE" != "$AFTER" ] || (cat bot_ETH.log | tail -10 && exit 1)
+
+      - name: Run SOL check
+        run: |
+          BEFORE=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
+          python3 bot.py aggressive 4032 0 SOL 1000
+          AFTER=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
+          echo "SOL: $BEFORE -> $AFTER"
+          [ "$BEFORE" != "$AFTER" ] || (cat bot_SOL.log | tail -10 && exit 1)
+
+      - name: Commit all state
         run: |
           git config user.name  "btcbot"
           git config user.email "btcbot@noreply.github.com"
-          git add state.json trades.json
+          git add state_BTC.json state_ETH.json state_SOL.json \
+                  trades_BTC.json trades_ETH.json trades_SOL.json
           git diff --staged --quiet && echo "No changes" && exit 0
-          CHECK=$(python3 -c "import json; s=json.load(open('state.json')); print(f'{s[\"checks_done\"]}/{s[\"max_checks\"]}')")
-          git commit -m "bot: check $CHECK"
-          git push
+          BTC=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
+          ETH=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
+          SOL=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
+          git commit -m "bot: BTC=$BTC ETH=$ETH SOL=$SOL"
+          git push || (git pull --rebase && git push)
 
       - name: Purge CDN cache
         run: |
-          curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/state.json"  || true
-          curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/trades.json" || true
+          for f in state_BTC state_ETH state_SOL trades_BTC trades_ETH trades_SOL; do
+            curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/${f}.json" || true
+          done
