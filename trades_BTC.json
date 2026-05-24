@@ -28,5 +28,15 @@
     "btc_bought": 0.00013685,
     "balance_after": 1.0,
     "btc_after": 0.01518356
+  },
+  {
+    "type": "BUY",
+    "check": 28,
+    "timestamp": "2026-05-24T21:00:51.661531+00:00",
+    "price": 65805.5,
+    "eur_spent": 900.9,
+    "coin_bought": 0.01369035,
+    "balance_after": 100.1,
+    "coin_after": 0.02887391
   }
 ]
