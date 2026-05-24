@@ -1,0 +1,30 @@
+2026-05-24 16:30:52  INFO     ================================================================
+2026-05-24 16:30:52  INFO     Bitcoin Paper Trading Bot   strategy=aggressive   BTCEUR
+2026-05-24 16:30:52  INFO       High-frequency, 90% positions, RSI-only, loose 40/60 thresholds
+2026-05-24 16:30:52  INFO       RSI thresholds : buy<40  sell>60
+2026-05-24 16:30:52  INFO       MA periods     : short=9  long=21
+2026-05-24 16:30:52  INFO       Position size  : 90%  |  MA confirm: False
+2026-05-24 16:30:52  INFO       Checks: 18/4032  |  Interval: 0s
+2026-05-24 16:30:52  INFO       Starting balance : 1000.0 EUR
+2026-05-24 16:30:52  INFO       Current balance  : €1.00  |  BTC: 0.01518356
+2026-05-24 16:30:52  INFO     ================================================================
+2026-05-24 16:30:52  INFO     
+-- Check 19/4032  [2026-05-24 16:30:52] --
+2026-05-24 16:30:52  WARNING  HTTP 451 on attempt 1/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:30:57  WARNING  HTTP 451 on attempt 2/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:31:07  WARNING  HTTP 451 on attempt 3/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:31:07  ERROR      Check failed: Failed after 3 attempts: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120 — skipping, state NOT advanced
+2026-05-24 16:31:07  INFO     
+================================================================
+2026-05-24 16:31:07  INFO     FINAL SUMMARY
+2026-05-24 16:31:07  INFO       Strategy     : aggressive
+2026-05-24 16:31:07  INFO       Symbol       : BTCEUR
+2026-05-24 16:31:07  INFO       Run          : 18 checks x 0s
+2026-05-24 16:31:07  INFO       Final value  : €1,002.22
+2026-05-24 16:31:07  INFO       P&L          : +2.22 EUR  (+0.22%)
+2026-05-24 16:31:07  INFO       Peak         : €1,002.28
+2026-05-24 16:31:07  INFO       Trough       : €998.70
+2026-05-24 16:31:07  INFO       Total trades : 3  (buy=3  sell=0)
+2026-05-24 16:31:07  INFO       Cash left    : €1.00
+2026-05-24 16:31:07  INFO       BTC held     : 0.01518356
+2026-05-24 16:31:07  INFO     ================================================================
