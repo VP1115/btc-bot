@@ -3,16 +3,16 @@
   "symbol": "BTCEUR",
   "balance": 1.0,
   "btc_held": 0.015183563846952124,
-  "checks_done": 30,
+  "checks_done": 31,
   "total_trades": 3,
   "buys": 3,
   "sells": 0,
   "start_time": "2026-05-24T14:01:06.463839+00:00",
-  "last_check": "2026-05-24T18:45:50.156291+00:00",
-  "last_price": 65911.0,
+  "last_check": "2026-05-24T18:50:50.728936+00:00",
+  "last_price": 65885.5,
   "peak_value": 1003.6117164366354,
   "trough_value": 998.704844108216,
   "max_checks": 4032,
   "interval": 0,
-  "last_rsi": 44.97
+  "last_rsi": 43.5
 }
