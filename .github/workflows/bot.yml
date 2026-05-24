@@ -1,0 +1,36 @@
+name: BTC Trading Bot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch:          # manual trigger from GitHub UI
+
+concurrency:
+  group: btcbot
+  cancel-in-progress: false  # queue runs, never run two at once
+
+permissions:
+  contents: write
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run one check
+        run: python3 bot.py aggressive 4032 0
+
+      - name: Commit updated state
+        run: |
+          git config user.name  "btcbot"
+          git config user.email "btcbot@noreply.github.com"
+          git add state.json trades.json bot.log
+          git diff --staged --quiet && echo "No changes" && exit 0
+          CHECK=$(python3 -c "import json; s=json.load(open('state.json')); print(f'{s[\"checks_done\"]}/{s[\"max_checks\"]}')")
+          git commit -m "bot: check $CHECK"
+          git push

@@ -1,0 +1,32 @@
+[
+  {
+    "type": "BUY",
+    "check": 4,
+    "timestamp": "2026-05-24T15:06:50.249444+00:00",
+    "price": 65791.67,
+    "eur_spent": 900.0,
+    "btc_bought": 0.01367954,
+    "balance_after": 100.0,
+    "btc_after": 0.01367954
+  },
+  {
+    "type": "BUY",
+    "check": 5,
+    "timestamp": "2026-05-24T15:11:50.579489+00:00",
+    "price": 65829.16,
+    "eur_spent": 90.0,
+    "btc_bought": 0.00136718,
+    "balance_after": 10.0,
+    "btc_after": 0.01504672
+  },
+  {
+    "type": "BUY",
+    "check": 6,
+    "timestamp": "2026-05-24T15:16:50.884850+00:00",
+    "price": 65767.72,
+    "eur_spent": 9.0,
+    "btc_bought": 0.00013685,
+    "balance_after": 1.0,
+    "btc_after": 0.01518356
+  }
+]
