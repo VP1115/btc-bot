@@ -107,11 +107,24 @@ def detect_symbol():
             continue
     raise RuntimeError('Cannot reach Binance API. Check your internet connection.')
 
+def fetch_closes_kraken(limit=120):
+    """Fallback price source — less IP-restrictive than Binance."""
+    url = 'https://api.kraken.com/0/public/OHLC?pair=XBTEUR&interval=15'
+    data = _get_json(url)
+    if data.get('error'):
+        raise RuntimeError(f'Kraken error: {data["error"]}')
+    pair_key = next(k for k in data['result'] if k != 'last')
+    return [float(c[4]) for c in data['result'][pair_key][-limit:]]
+
 def fetch_closes(symbol, interval='15m', limit=120):
-    """Return a list of close prices (most recent last)."""
-    url = f'{BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}'
-    candles = _get_json(url)
-    return [float(c[4]) for c in candles]  # index 4 = close price
+    """Return close prices — tries Binance first, falls back to Kraken."""
+    try:
+        url = f'{BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}'
+        candles = _get_json(url, retries=2)
+        return [float(c[4]) for c in candles]
+    except Exception as e:
+        log.warning(f'Binance unavailable ({e}), switching to Kraken')
+        return fetch_closes_kraken(limit)
 
 # ── Technical Indicators ───────────────────────────────────────────────────────
 
