@@ -117,7 +117,7 @@ def detect_symbol(name='BTC'):
 
     for sym in candidates:
         try:
-            _get_json(f'{BINANCE_BASE}/ticker/price?symbol={sym}')
+            _get_json(f'{BINANCE_BASE}/ticker/price?symbol={sym}', retries=1)
             log.info(f'Symbol detected: {sym}')
             return sym
         except Exception:
@@ -140,15 +140,31 @@ def fetch_closes_coingecko(symbol, limit=120):
     if not coin_id:
         raise RuntimeError(f'No CoinGecko mapping for {symbol}')
     currency = 'eur' if symbol.endswith('EUR') else 'usd'
-    url  = f'https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency={currency}&days=7&interval=hourly'
+    # interval param is a Pro-only feature; omitting it gives hourly data for days<=90
+    url  = f'https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency={currency}&days=7'
     data = _get_json(url)
     return [p[1] for p in data['prices'][-limit:]]
 
+def fetch_closes_cryptocompare(symbol, limit=120):
+    for suffix in ('EUR', 'USDT', 'USD'):
+        if symbol.endswith(suffix):
+            fsym = symbol[:-len(suffix)]
+            tsym = suffix if suffix in ('EUR', 'USD') else 'USD'
+            break
+    else:
+        raise RuntimeError(f'Cannot parse symbol for CryptoCompare: {symbol}')
+    url  = f'https://min-api.cryptocompare.com/data/v2/histohour?fsym={fsym}&tsym={tsym}&limit={limit}'
+    data = _get_json(url)
+    if data.get('Response') != 'Success':
+        raise RuntimeError(f'CryptoCompare: {data.get("Message")}')
+    return [float(c['close']) for c in data['Data']['Data']]
+
 def fetch_closes(symbol, limit=120):
     for source, fn in [
-        ('Binance',    lambda: [float(c[4]) for c in _get_json(f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}', retries=2)]),
-        ('Kraken',     lambda: fetch_closes_kraken(symbol, limit)),
-        ('CoinGecko',  lambda: fetch_closes_coingecko(symbol, limit)),
+        ('Binance',        lambda: [float(c[4]) for c in _get_json(f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}', retries=2)]),
+        ('Kraken',         lambda: fetch_closes_kraken(symbol, limit)),
+        ('CoinGecko',      lambda: fetch_closes_coingecko(symbol, limit)),
+        ('CryptoCompare',  lambda: fetch_closes_cryptocompare(symbol, limit)),
     ]:
         try:
             prices = fn()
