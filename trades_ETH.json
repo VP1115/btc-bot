@@ -8,5 +8,15 @@
     "coin_bought": 1.00161928,
     "balance_after": 200.0,
     "coin_after": 1.00161928
+  },
+  {
+    "type": "BUY",
+    "check": 6,
+    "timestamp": "2026-05-24T20:55:28.846819+00:00",
+    "price": 1796.77,
+    "eur_spent": 180.0,
+    "coin_bought": 0.10017977,
+    "balance_after": 20.0,
+    "coin_after": 1.10179905
   }
 ]
