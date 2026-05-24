@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC Bot Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 14px;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 16px;
+      letter-spacing: 3px;
+      color: #f0b429;
+      padding: 12px 0 4px;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 11px;
+      color: #484f58;
+      margin-bottom: 20px;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .dot { font-size: 18px; }
+    .dot.live  { color: #3fb950; }
+    .dot.dead  { color: #f85149; }
+
+    .status-label { font-weight: bold; font-size: 13px; }
+    .status-label.live { color: #3fb950; }
+    .status-label.dead { color: #f85149; }
+
+    .badge {
+      background: #1f3a5f;
+      color: #79c0ff;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+
+    .updated { margin-left: auto; color: #484f58; font-size: 11px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 400px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .card-label {
+      font-size: 10px;
+      color: #484f58;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .card-value {
+      font-size: 22px;
+      font-weight: bold;
+      color: #e6edf3;
+    }
+
+    .card-value.green  { color: #3fb950; }
+    .card-value.red    { color: #f85149; }
+    .card-value.yellow { color: #f0b429; }
+    .card-value.blue   { color: #79c0ff; }
+
+    .card-sub {
+      font-size: 11px;
+      color: #484f58;
+      margin-top: 2px;
+    }
+
+    .wide { grid-column: 1 / -1; }
+
+    .progress-wrap {
+      background: #21262d;
+      border-radius: 4px;
+      height: 6px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: #f0b429;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    .timing-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .timing-row .card { flex: 1; }
+
+    .countdown {
+      font-size: 28px;
+      font-weight: bold;
+      color: #f0b429;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .countdown.soon { color: #3fb950; }
+    .countdown.overdue { color: #f85149; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      text-align: left;
+      color: #484f58;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 4px 6px 8px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    td {
+      padding: 7px 6px;
+      border-bottom: 1px solid #161b22;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .buy  { color: #3fb950; font-weight: bold; }
+    .sell { color: #f85149; font-weight: bold; }
+
+    .error {
+      text-align: center;
+      color: #f85149;
+      padding: 40px;
+    }
+
+    #last-updated {
+      text-align: center;
+      font-size: 10px;
+      color: #484f58;
+      margin-top: 20px;
+      padding-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>₿ BTC Paper Trading</h1>
+<div class="subtitle" id="strategy-label">Loading…</div>
+
+<div class="status-bar">
+  <span class="dot" id="dot">●</span>
+  <span class="status-label" id="status-label">–</span>
+  <span class="badge" id="strategy-badge">–</span>
+  <span class="badge" id="symbol-badge">–</span>
+  <span class="updated" id="header-time">–</span>
+</div>
+
+<!-- Countdown row -->
+<div class="timing-row">
+  <div class="card">
+    <div class="card-label">Next Check In</div>
+    <div class="countdown" id="countdown">--:--</div>
+    <div class="card-sub" id="next-check-time">–</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Last Check</div>
+    <div class="card-value blue" id="last-check-rel">–</div>
+    <div class="card-sub" id="last-check-time">–</div>
+  </div>
+</div>
+
+<!-- Main grid -->
+<div class="grid">
+  <div class="card">
+    <div class="card-label">Portfolio Value</div>
+    <div class="card-value" id="total-value">–</div>
+    <div class="card-sub" id="start-value">Started with €1,000</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">P&amp;L</div>
+    <div class="card-value" id="pnl">–</div>
+    <div class="card-sub" id="pnl-pct">–</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">BTC Price</div>
+    <div class="card-value yellow" id="btc-price">–</div>
+    <div class="card-sub" id="btc-held">–</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Last RSI</div>
+    <div class="card-value" id="last-rsi">–</div>
+    <div class="card-sub" id="rsi-signal">–</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Cash</div>
+    <div class="card-value" id="cash">–</div>
+    <div class="card-sub">available EUR</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Trades</div>
+    <div class="card-value" id="trades-total">–</div>
+    <div class="card-sub" id="trades-sub">–</div>
+  </div>
+
+  <div class="card wide">
+    <div class="card-label">Progress — <span id="progress-label">–</span></div>
+    <div class="progress-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+    <div class="card-sub" style="margin-top:6px">Peak <span id="peak">–</span> · Trough <span id="trough">–</span></div>
+  </div>
+</div>
+
+<!-- Recent trades -->
+<div class="card">
+  <div class="card-label" style="margin-bottom:10px">Recent Trades</div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Type</th>
+        <th>Price</th>
+        <th>BTC</th>
+        <th>EUR</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="trades-body">
+      <tr><td colspan="6" style="color:#484f58;text-align:center">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="last-updated">–</div>
+
+<script>
+  const RAW = 'https://raw.githubusercontent.com/VP1115/btc-bot/main/';
+  const INTERVAL_S = 300;
+  const STARTING = 1000;
+
+  let nextCheckAt = null;
+  let lastRsi = null;
+
+  function fmt(n, dec=2) {
+    return Number(n).toLocaleString('en-IE', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+  }
+
+  function relTime(isoStr) {
+    const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+    if (diff < 60)  return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ${diff%60}s ago`;
+    return `${Math.floor(diff/3600)}h ago`;
+  }
+
+  function fmtTime(isoStr) {
+    return new Date(isoStr).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  }
+
+  async function fetchJSON(path) {
+    const r = await fetch(RAW + path + '?t=' + Date.now());
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  async function refresh() {
+    try {
+      const [state, trades] = await Promise.all([
+        fetchJSON('state.json'),
+        fetchJSON('trades.json').catch(() => []),
+      ]);
+
+      const price    = state.last_price || 0;
+      const cash     = state.balance || 0;
+      const btc      = state.btc_held || 0;
+      const total    = cash + btc * price;
+      const pnl      = total - STARTING;
+      const pnlPct   = pnl / STARTING * 100;
+      const done     = state.checks_done || 0;
+      const maxC     = state.max_checks || 4032;
+      const interval = state.interval || INTERVAL_S;
+
+      // Status
+      const lastCheckMs = state.last_check ? new Date(state.last_check).getTime() : 0;
+      const age = (Date.now() - lastCheckMs) / 1000;
+      const isLive = age < interval * 3;
+
+      document.getElementById('dot').className          = 'dot ' + (isLive ? 'live' : 'dead');
+      document.getElementById('status-label').className = 'status-label ' + (isLive ? 'live' : 'dead');
+      document.getElementById('status-label').textContent = isLive ? '● LIVE' : '○ PAUSED';
+      document.getElementById('strategy-badge').textContent = (state.strategy || '?').toUpperCase();
+      document.getElementById('symbol-badge').textContent   = state.symbol || 'BTCEUR';
+      document.getElementById('strategy-label').textContent = `Strategy: ${(state.strategy||'?').toUpperCase()} · ${state.symbol||'BTCEUR'}`;
+      document.getElementById('header-time').textContent    = new Date().toLocaleTimeString();
+
+      // Next check countdown
+      if (state.last_check) {
+        nextCheckAt = lastCheckMs + interval * 1000;
+        document.getElementById('next-check-time').textContent = 'at ' + fmtTime(new Date(nextCheckAt).toISOString());
+      }
+
+      // Last check
+      if (state.last_check) {
+        document.getElementById('last-check-rel').textContent  = relTime(state.last_check);
+        document.getElementById('last-check-time').textContent = fmtTime(state.last_check);
+      }
+
+      // Portfolio
+      document.getElementById('total-value').textContent = '€' + fmt(total);
+      const pnlEl = document.getElementById('pnl');
+      pnlEl.textContent = (pnl >= 0 ? '+' : '') + '€' + fmt(Math.abs(pnl));
+      pnlEl.className   = 'card-value ' + (pnl >= 0 ? 'green' : 'red');
+      document.getElementById('pnl-pct').textContent = (pnlPct >= 0 ? '+' : '') + fmt(pnlPct) + '%';
+
+      // Price & BTC
+      document.getElementById('btc-price').textContent = '€' + fmt(price, 2);
+      document.getElementById('btc-held').textContent  = `${btc.toFixed(6)} BTC held`;
+      document.getElementById('cash').textContent      = '€' + fmt(cash);
+
+      // RSI — read from most recent trade or state
+      if (state.last_rsi != null) lastRsi = state.last_rsi;
+      if (lastRsi != null) {
+        const rsiEl = document.getElementById('last-rsi');
+        rsiEl.textContent  = fmt(lastRsi, 1);
+        rsiEl.className    = 'card-value ' + (lastRsi < 35 ? 'green' : lastRsi > 65 ? 'red' : 'yellow');
+        document.getElementById('rsi-signal').textContent =
+          lastRsi < 35 ? 'oversold — watching for BUY' :
+          lastRsi > 65 ? 'overbought — watching for SELL' : 'neutral — holding';
+      }
+
+      // Trades
+      document.getElementById('trades-total').textContent = state.total_trades || 0;
+      document.getElementById('trades-sub').textContent   = `${state.buys||0} buys · ${state.sells||0} sells`;
+
+      // Progress
+      const pct = done / maxC * 100;
+      document.getElementById('progress-label').textContent = `${done} / ${maxC} (${fmt(pct,1)}%)`;
+      document.getElementById('progress-bar').style.width   = pct + '%';
+      document.getElementById('peak').textContent   = '€' + fmt(state.peak_value||STARTING);
+      document.getElementById('trough').textContent = '€' + fmt(state.trough_value||STARTING);
+
+      // Trades table
+      const tbody = document.getElementById('trades-body');
+      if (trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#484f58;text-align:center">No trades yet</td></tr>';
+      } else {
+        tbody.innerHTML = [...trades].reverse().slice(0, 12).map(t => {
+          const isBuy = t.type === 'BUY';
+          const btcAmt = isBuy ? t.btc_bought : t.btc_sold;
+          const eurAmt = isBuy ? t.eur_spent  : t.eur_received;
+          const time   = t.timestamp ? fmtTime(t.timestamp) : '–';
+          return `<tr>
+            <td style="color:#484f58">${t.check}</td>
+            <td class="${isBuy ? 'buy' : 'sell'}">${t.type}</td>
+            <td>€${fmt(t.price)}</td>
+            <td>${Number(btcAmt).toFixed(6)}</td>
+            <td>€${fmt(eurAmt)}</td>
+            <td style="color:#484f58">${time}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      document.getElementById('last-updated').textContent =
+        'Last fetched: ' + new Date().toLocaleTimeString();
+
+    } catch (e) {
+      console.error(e);
+      document.getElementById('last-updated').textContent = 'Failed to load data — ' + e.message;
+    }
+  }
+
+  // Countdown ticker — runs every second
+  function tickCountdown() {
+    if (!nextCheckAt) return;
+    const secs = Math.round((nextCheckAt - Date.now()) / 1000);
+    const el   = document.getElementById('countdown');
+    if (secs <= 0) {
+      el.textContent = '00:00';
+      el.className   = 'countdown overdue';
+    } else {
+      const m = String(Math.floor(secs / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      el.textContent = `${m}:${s}`;
+      el.className   = 'countdown' + (secs < 30 ? ' soon' : '');
+    }
+  }
+
+  // Refresh data every 30s, tick every second
+  refresh();
+  setInterval(refresh, 30000);
+  setInterval(tickCountdown, 1000);
+</script>
+</body>
+</html>

@@ -364,6 +364,7 @@ def main():
             state['checks_done'] += 1
             state['last_check']  = datetime.now(timezone.utc).isoformat()
             state['last_price']  = price
+            state['last_rsi']    = ind.get('rsi')
             save_state(state)
 
             pnl     = portfolio_after - STARTING_BALANCE
