@@ -414,7 +414,7 @@
     const secs = Math.round((nextCheckAt - Date.now()) / 1000);
     const el   = document.getElementById('countdown');
     if (secs <= 0) {
-      el.textContent = '00:00';
+      el.textContent = 'WAITING…';
       el.className   = 'countdown overdue';
     } else {
       const m = String(Math.floor(secs / 60)).padStart(2, '0');
