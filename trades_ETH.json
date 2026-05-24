@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "type": "BUY",
+    "check": 5,
+    "timestamp": "2026-05-24T20:50:35.395880+00:00",
+    "price": 1797.09,
+    "eur_spent": 1800.0,
+    "coin_bought": 1.00161928,
+    "balance_after": 200.0,
+    "coin_after": 1.00161928
+  }
+]
