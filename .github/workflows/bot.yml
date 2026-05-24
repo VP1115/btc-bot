@@ -34,3 +34,8 @@ jobs:
           CHECK=$(python3 -c "import json; s=json.load(open('state.json')); print(f'{s[\"checks_done\"]}/{s[\"max_checks\"]}')")
           git commit -m "bot: check $CHECK"
           git push
+
+      - name: Purge CDN cache
+        run: |
+          curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/state.json"  || true
+          curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/trades.json" || true
