@@ -152,7 +152,7 @@
 <div id="footer">–</div>
 
 <script>
-  const API      = 'https://api.github.com/repos/VP1115/btc-bot/contents/';
+  const CDN      = 'https://cdn.jsdelivr.net/gh/VP1115/btc-bot@main/';
   const ASSETS   = ['BTC', 'ETH', 'SOL'];
   const STARTING = { BTC: 2000, ETH: 2000, SOL: 1000 };
 
@@ -176,7 +176,7 @@
   }
 
   async function fetchJSON(path) {
-    const r = await fetch(API + path, { headers: {'Accept':'application/vnd.github.v3.raw'}, cache:'no-store' });
+    const r = await fetch(CDN + path, { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }
