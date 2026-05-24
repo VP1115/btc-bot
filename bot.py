@@ -319,8 +319,9 @@ def main():
     state    = load_state(arg_strategy)
     strategy = state['strategy']          # honour saved strategy on resume
     cfg      = STRATEGIES[strategy]
-    state['max_checks'] = max_checks      # always update so dashboard sees it
-    state['interval']   = interval
+    state['max_checks'] = max_checks
+    if interval > 0:                      # don't overwrite with 0 in one-shot mode
+        state['interval'] = interval
 
     if not state.get('symbol'):
         state['symbol'] = detect_symbol()
