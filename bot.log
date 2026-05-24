@@ -58,3 +58,33 @@
 2026-05-24 16:47:50  INFO       Cash left    : €1.00
 2026-05-24 16:47:50  INFO       BTC held     : 0.01518356
 2026-05-24 16:47:50  INFO     ================================================================
+2026-05-24 16:51:57  INFO     ================================================================
+2026-05-24 16:51:57  INFO     Bitcoin Paper Trading Bot   strategy=aggressive   BTCEUR
+2026-05-24 16:51:57  INFO       High-frequency, 90% positions, RSI-only, loose 40/60 thresholds
+2026-05-24 16:51:57  INFO       RSI thresholds : buy<40  sell>60
+2026-05-24 16:51:57  INFO       MA periods     : short=9  long=21
+2026-05-24 16:51:57  INFO       Position size  : 90%  |  MA confirm: False
+2026-05-24 16:51:57  INFO       Checks: 20/4032  |  Interval: 0s
+2026-05-24 16:51:57  INFO       Starting balance : 1000.0 EUR
+2026-05-24 16:51:57  INFO       Current balance  : €1.00  |  BTC: 0.01518356
+2026-05-24 16:51:57  INFO     ================================================================
+2026-05-24 16:51:57  INFO     
+-- Check 21/4032  [2026-05-24 16:51:57] --
+2026-05-24 16:51:58  WARNING  HTTP 451 on attempt 1/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:52:03  WARNING  HTTP 451 on attempt 2/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:52:13  WARNING  HTTP 451 on attempt 3/3: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120
+2026-05-24 16:52:13  ERROR      Check failed: Failed after 3 attempts: https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=15m&limit=120 — skipping, state NOT advanced
+2026-05-24 16:52:13  INFO     
+================================================================
+2026-05-24 16:52:13  INFO     FINAL SUMMARY
+2026-05-24 16:52:13  INFO       Strategy     : aggressive
+2026-05-24 16:52:13  INFO       Symbol       : BTCEUR
+2026-05-24 16:52:13  INFO       Run          : 20 checks x 0s
+2026-05-24 16:52:13  INFO       Final value  : €1,001.29
+2026-05-24 16:52:13  INFO       P&L          : +1.29 EUR  (+0.13%)
+2026-05-24 16:52:13  INFO       Peak         : €1,002.28
+2026-05-24 16:52:13  INFO       Trough       : €998.70
+2026-05-24 16:52:13  INFO       Total trades : 3  (buy=3  sell=0)
+2026-05-24 16:52:13  INFO       Cash left    : €1.00
+2026-05-24 16:52:13  INFO       BTC held     : 0.01518356
+2026-05-24 16:52:13  INFO     ================================================================
