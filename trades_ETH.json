@@ -58,5 +58,15 @@
     "coin_sold": 0.01000636,
     "balance_after": 2013.0829,
     "coin_after": 0.00111182
+  },
+  {
+    "type": "SELL",
+    "check": 132,
+    "timestamp": "2026-05-25T07:05:32.554717+00:00",
+    "price": 1815.41,
+    "eur_received": 1.8166,
+    "coin_sold": 0.00100064,
+    "balance_after": 2014.8995,
+    "coin_after": 0.00011118
   }
 ]
