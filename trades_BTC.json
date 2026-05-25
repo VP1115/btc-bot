@@ -151,5 +151,18 @@
     "reason": "Lower BB bounce (price=66324.90 \u2264 66277.59)",
     "atr": 91.6378,
     "rsi": 42.9
+  },
+  {
+    "type": "SELL",
+    "check": 29,
+    "timestamp": "2026-05-25T14:20:31.020884+00:00",
+    "price": 66546.8,
+    "eur_received": 1010.4176,
+    "coin_sold": 0.01518356,
+    "balance_after": 2011.4176,
+    "coin_after": 0.0,
+    "pnl": 0.0,
+    "entry_price": 66546.8,
+    "reason": "RSI=61.5 + upper BB (66632.08) [RANGING]"
   }
 ]
