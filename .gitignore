@@ -1,1 +1,10 @@
 bot.log
+bot_*.log
+*.pid
+.env
+live_api_log.json
+.live_confirms_done
+__pycache__/
+*.pyc
+STOP
+PAUSE

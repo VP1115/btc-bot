@@ -1,229 +1,234 @@
 #!/usr/bin/env python3
 """
-BTC Bot Live Dashboard
-Run: python3 dashboard.py
-Press Q to quit.
+Terminal dashboard for multi-asset paper trading bot.
+Usage: python3 dashboard.py
+Refreshes every 5 seconds. Press q or Ctrl+C to exit.
 """
 
-import curses
-import json
-import os
-import time
-from datetime import datetime
+import curses, json, math, os, subprocess, time
+from datetime import datetime, timezone
 
-STATE_FILE  = 'state.json'
-TRADES_FILE = 'trades.json'
-PID_FILE    = 'bot.pid'
-STARTING    = 1000.0
-REFRESH     = 5
+ASSETS   = [('BTC', 'state_BTC.json', 'trades_BTC.json'),
+            ('ETH', 'state_ETH.json', 'trades_ETH.json'),
+            ('SOL', 'state_SOL.json', 'trades_SOL.json')]
+STARTING = {'BTC': 2000, 'ETH': 2000, 'SOL': 1000}
 
-def read_json(path):
+def _load(path):
     try:
         with open(path, encoding='utf-8') as f:
             return json.load(f)
     except Exception:
         return None
 
-def bot_alive():
-    import subprocess
+def _rel(iso):
+    if not iso:
+        return '–'
+    s = int((datetime.now(timezone.utc) - datetime.fromisoformat(iso)).total_seconds())
+    if s < 60:   return f'{s}s ago'
+    if s < 3600: return f'{s//60}m {s%60}s ago'
+    return f'{s//3600}h ago'
+
+def _calc_sharpe(equity_points, timeframe='1h'):
+    if not equity_points or len(equity_points) < 3:
+        return None
+    vals = [p['v'] for p in equity_points]
+    rets = [(vals[i] - vals[i-1]) / vals[i-1] for i in range(1, len(vals)) if vals[i-1] > 0]
+    if len(rets) < 2:
+        return None
+    mu    = sum(rets) / len(rets)
+    sigma = math.sqrt(sum((r - mu) ** 2 for r in rets) / len(rets))
+    if sigma == 0:
+        return None
+    ppy = {'1h': 8760, '4h': 2190, '15m': 35040}.get(timeframe, 8760)
+    return mu / sigma * math.sqrt(ppy)
+
+def _bot_running(name):
     try:
-        out = subprocess.check_output(['pgrep', '-f', 'bot.py'], text=True).strip()
-        if out:
-            pid = int(out.splitlines()[0])
-            return True, pid
+        out = subprocess.check_output(['pgrep', '-f', f'bot.py.*{name}'], stderr=subprocess.DEVNULL)
+        return bool(out.strip())
     except Exception:
-        pass
-    return False, None
+        return False
 
-def safe_add(win, row, col, text, attr=0, max_w=None):
-    h, w = win.getmaxyx()
-    if row >= h - 1 or col >= w:
-        return
-    if max_w:
-        text = text[:max_w]
-    text = text[:w - col - 1]
-    try:
-        win.addstr(row, col, text, attr)
-    except curses.error:
-        pass
-
-def draw_dashboard(stdscr):
+def draw(stdscr):
     curses.curs_set(0)
-    curses.start_color()
-    curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_GREEN,  -1)
-    curses.init_pair(2, curses.COLOR_RED,    -1)
-    curses.init_pair(3, curses.COLOR_YELLOW, -1)
-    curses.init_pair(4, curses.COLOR_CYAN,   -1)
-    curses.init_pair(5, curses.COLOR_WHITE,  -1)
-
-    GREEN  = curses.color_pair(1) | curses.A_BOLD
-    RED    = curses.color_pair(2) | curses.A_BOLD
-    YELLOW = curses.color_pair(3) | curses.A_BOLD
-    CYAN   = curses.color_pair(4) | curses.A_BOLD
-    BOLD   = curses.A_BOLD
-    DIM    = curses.A_DIM
-    REV    = curses.A_REVERSE
-
     stdscr.nodelay(True)
-    stdscr.timeout(500)
-
-    last_refresh = 0
+    curses.start_color()
+    curses.init_pair(1, curses.COLOR_YELLOW,  curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_GREEN,   curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_RED,     curses.COLOR_BLACK)
+    curses.init_pair(4, curses.COLOR_CYAN,    curses.COLOR_BLACK)
+    curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
 
     while True:
         key = stdscr.getch()
-        if key in (ord('q'), ord('Q')):
+        if key in (ord('q'), 27):
             break
 
-        now = time.time()
-        if now - last_refresh < REFRESH:
-            continue
-        last_refresh = now
-
-        stdscr.erase()
+        stdscr.clear()
         h, w = stdscr.getmaxyx()
+        now  = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        state  = read_json(STATE_FILE)
-        trades = read_json(TRADES_FILE) or []
-        alive, pid = bot_alive()
-        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        title = '  Crypto Paper Trading Bot — Dashboard'
+        stdscr.addstr(0, 0, title.ljust(w), curses.color_pair(1) | curses.A_BOLD)
+        stdscr.addstr(1, 0, f'  {now}   [q] quit', curses.A_DIM)
+        stdscr.addstr(2, 0, '─' * min(w, 80))
 
-        # ── Title bar ──────────────────────────────────────────────────────────
-        title = '  BTC PAPER TRADING DASHBOARD  '
-        safe_add(stdscr, 0, max(0, (w - len(title)) // 2), title, BOLD | REV)
+        row = 3
+        total_val   = 0.0
+        total_start = 0.0
+        total_wins  = 0
+        total_losses = 0
 
-        row = 2
+        for name, state_path, trades_path in ASSETS:
+            state   = _load(state_path)
+            trades  = _load(trades_path) or []
+            equity  = _load(f'equity_{name}.json') or []
+            start   = STARTING[name]
+            running = _bot_running(name)
 
-        if not state:
-            safe_add(stdscr, row, 2, 'No state.json found — bot has not run yet.', RED)
-            safe_add(stdscr, h - 1, 0, ' Q quit ', REV)
-            stdscr.refresh()
-            continue
+            if state is None:
+                if row < h - 1:
+                    stdscr.addstr(row, 2, f'{name}: state file not found', curses.A_DIM)
+                row += 2
+                continue
 
-        strategy = state.get('strategy', '?').upper()
-        symbol   = state.get('symbol', 'BTCEUR')
+            price     = state.get('last_price') or 0
+            cash      = state.get('balance', 0)
+            held      = state.get('coin_held', 0)
+            total     = cash + held * price
+            pnl       = total - start
+            pnlpct    = pnl / start * 100 if start else 0
+            wins      = state.get('win_trades', 0)
+            losses    = state.get('loss_trades', 0)
+            closed    = wins + losses
+            wr        = wins / closed * 100 if closed else None
+            profiteur = state.get('total_profit_eur', 0)
+            losseur   = state.get('total_loss_eur', 0)
+            pf        = profiteur / losseur if losseur > 0 else None
+            peak      = state.get('peak_value',   start)
+            trough    = state.get('trough_value', start)
+            dd        = (peak - total) / peak * 100 if peak > 0 else 0
+            sharpe    = _calc_sharpe(equity, state.get('timeframe', '1h'))
+            regime    = state.get('last_regime', '?')
+            entry     = state.get('entry_price')
+            rsi       = state.get('last_rsi')
+            tf        = state.get('timeframe', '?')
+            dsval     = state.get('daily_start_val', start)
+            dpnl      = total - dsval
+            strategy  = state.get('strategy', '?')
+            checks    = state.get('checks_done', 0)
+            max_c     = state.get('max_checks', 4032)
+            last_chk  = _rel(state.get('last_check'))
 
-        # ── Status row ────────────────────────────────────────────────────────
-        if alive:
-            safe_add(stdscr, row, 2, '● LIVE', GREEN)
-            safe_add(stdscr, row, 10, f'PID {pid}', DIM)
-        else:
-            safe_add(stdscr, row, 2, '○ STOPPED', RED)
+            total_val    += total
+            total_start  += start
+            total_wins   += wins
+            total_losses += losses
 
-        safe_add(stdscr, row, 22, f'Strategy: {strategy}', CYAN)
-        safe_add(stdscr, row, 42, f'Symbol: {symbol}', DIM)
-        safe_add(stdscr, row, w - len(ts) - 2, ts, DIM)
-        row += 1
-
-        # ── Progress bar ──────────────────────────────────────────────────────
-        done  = state.get('checks_done', 0)
-        total = state.get('max_checks', 4032)
-        pct   = done / total * 100
-        bar_w = min(40, w - 30)
-        filled = int(bar_w * done / total)
-        bar = '█' * filled + '░' * (bar_w - filled)
-        safe_add(stdscr, row, 2, f'Progress  [{bar}]  {done}/{total}  ({pct:.1f}%)', DIM)
-        row += 2
-
-        # ── Portfolio box ─────────────────────────────────────────────────────
-        price     = state.get('last_price') or 0
-        cash      = state.get('balance', 0)
-        btc       = state.get('btc_held', 0)
-        btc_val   = btc * price
-        total_val = cash + btc_val
-        pnl       = total_val - STARTING
-        pnl_pct   = pnl / STARTING * 100
-        peak      = state.get('peak_value', STARTING)
-        trough    = state.get('trough_value', STARTING)
-
-        safe_add(stdscr, row, 2, '┌─ PORTFOLIO ──────────────────────────────────────────┐', DIM)
-        row += 1
-
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, 'Total Value :')
-        safe_add(stdscr, row, 18, f'€{total_val:>11,.2f}', BOLD)
-        row += 1
-
-        pnl_color = GREEN if pnl >= 0 else RED
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, 'P&L         :')
-        safe_add(stdscr, row, 18, f'{pnl:>+11,.2f} EUR  ({pnl_pct:>+.2f}%)', pnl_color)
-        row += 1
-
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, 'Cash        :')
-        safe_add(stdscr, row, 18, f'€{cash:>11,.2f}', DIM)
-        row += 1
-
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, 'BTC held    :')
-        safe_add(stdscr, row, 18, f'{btc:.8f}  =  €{btc_val:,.2f}', DIM)
-        row += 1
-
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, 'BTC Price   :')
-        safe_add(stdscr, row, 18, f'€{price:>11,.2f}', YELLOW)
-        row += 1
-
-        safe_add(stdscr, row, 2, '│', DIM)
-        safe_add(stdscr, row, 4, f'Peak  €{peak:,.2f}    Trough  €{trough:,.2f}', DIM)
-        row += 1
-
-        safe_add(stdscr, row, 2, '└──────────────────────────────────────────────────────┘', DIM)
-        row += 2
-
-        # ── Trade stats ───────────────────────────────────────────────────────
-        n_total = state.get('total_trades', 0)
-        n_buys  = state.get('buys', 0)
-        n_sells = state.get('sells', 0)
-        safe_add(stdscr, row, 2, f'Trades: {n_total} total  —  ', DIM)
-        safe_add(stdscr, row, 20, f'{n_buys} buys', GREEN)
-        safe_add(stdscr, row, 27, '  /  ', DIM)
-        safe_add(stdscr, row, 32, f'{n_sells} sells', RED)
-        row += 2
-
-        # ── Recent trades table ───────────────────────────────────────────────
-        if trades:
-            hdr = '  #     TYPE    PRICE (EUR)    BTC AMOUNT        EUR VALUE    TIME (UTC)'
-            safe_add(stdscr, row, 2, '┌─ RECENT TRADES' + '─' * max(0, len(hdr) - 14) + '┐', DIM)
-            row += 1
-            safe_add(stdscr, row, 2, '│' + hdr + '│', DIM)
-            row += 1
-            safe_add(stdscr, row, 2, '│' + '─' * len(hdr) + '│', DIM)
+            color = {'BTC': 1, 'ETH': 4, 'SOL': 5}.get(name, 1)
+            status_color = 2 if running else 3
+            status = 'RUNNING' if running else 'stopped'
+            header = f'  {name}  [{strategy}]  [{tf}]  {regime}'
+            if row < h - 1:
+                stdscr.addstr(row, 0, header, curses.color_pair(color) | curses.A_BOLD)
+                stdscr.addstr(row, len(header) + 2, f'[{status}]', curses.color_pair(status_color))
             row += 1
 
-            shown = trades[-10:][::-1]
-            for t in shown:
-                if row >= h - 3:
-                    break
-                t_type  = t.get('type', '?')
-                t_color = GREEN if t_type == 'BUY' else RED
-                t_price = t.get('price', 0)
-                t_btc   = t.get('btc_bought') or t.get('btc_sold', 0)
-                t_eur   = t.get('eur_spent') or t.get('eur_received', 0)
-                t_time  = t.get('timestamp', '')[:16].replace('T', ' ')
-                t_check = t.get('check', 0)
-
-                line = f'  {t_check:<5}  '
-                safe_add(stdscr, row, 2, '│' + line, DIM)
-                col = 2 + 1 + len(line)
-                safe_add(stdscr, row, col, f'{t_type:<6}', t_color)
-                rest = f'  €{t_price:>10,.2f}    {t_btc:.8f}    €{t_eur:>10,.2f}    {t_time}'
-                safe_add(stdscr, row, col + 6, rest)
+            def addrow(label, val_str, attr=0):
+                nonlocal row
+                if row < h - 2:
+                    stdscr.addstr(row, 4, f'{label:<16}', curses.A_DIM)
+                    stdscr.addstr(row, 20, val_str, attr)
                 row += 1
 
-            safe_add(stdscr, row, 2, '└' + '─' * len(hdr) + '┘', DIM)
+            addrow('Price',   f'€{price:>12,.2f}')
+            addrow('Value',   f'€{total:>12,.2f}')
+
+            sign = '+' if pnl >= 0 else ''
+            addrow('P&L', f'{sign}€{abs(pnl):,.2f} ({sign}{pnlpct:.2f}%)',
+                   curses.color_pair(2) if pnl >= 0 else curses.color_pair(3))
+
+            dsign = '+' if dpnl >= 0 else ''
+            addrow('Daily P&L', f'{dsign}€{abs(dpnl):,.2f}',
+                   curses.color_pair(2) if dpnl >= 0 else curses.color_pair(3))
+
+            addrow('Cash',  f'€{cash:>12,.2f}')
+            addrow('Held',  f'{held:.6f} {name}')
+
+            if held > 1e-9 and entry:
+                ep_pnl = (price - entry) / entry * 100 if price else 0
+                esign  = '+' if ep_pnl >= 0 else ''
+                addrow('Entry price', f'€{entry:,.2f} ({esign}{ep_pnl:.1f}%)',
+                       curses.color_pair(2) if ep_pnl >= 0 else curses.color_pair(3))
+            else:
+                addrow('Entry price', 'no position', curses.A_DIM)
+
+            rsi_str  = f'{rsi:.1f}' if rsi is not None else '–'
+            rsi_attr = (curses.color_pair(2) if rsi and rsi < 35 else
+                        curses.color_pair(3) if rsi and rsi > 65 else 0)
+            addrow('RSI', rsi_str, rsi_attr)
+
+            addrow('Win rate', f'{wr:.0f}%  ({wins}W/{losses}L)' if wr is not None else '0 trades')
+
+            pf_attr = (curses.color_pair(2) if pf and pf >= 1.5 else
+                       curses.color_pair(3) if pf and pf < 1 else 0)
+            addrow('Profit factor', f'{pf:.2f}' if pf else '–', pf_attr)
+
+            dd_attr = (curses.color_pair(3) if dd >= 10 else
+                       curses.color_pair(1) if dd >= 5  else curses.color_pair(2))
+            addrow('Drawdown', f'{dd:.1f}%', dd_attr)
+            addrow('Peak',     f'€{peak:,.2f}', curses.color_pair(2))
+            addrow('Trough',   f'€{trough:,.2f}', curses.color_pair(3) if trough < start else 0)
+            if sharpe is not None:
+                sh_attr = (curses.color_pair(2) if sharpe >= 1 else
+                           curses.color_pair(3) if sharpe < 0 else curses.color_pair(1))
+                addrow('Sharpe', f'{sharpe:.2f}', sh_attr)
+            else:
+                addrow('Sharpe', '–  (need more data)', curses.A_DIM)
+            addrow('Checks',   f'{checks}/{max_c}')
+            addrow('Last check', last_chk)
+
+            if trades:
+                last_t = trades[-1]
+                t_type = last_t.get('type', '?')
+                t_rsn  = (last_t.get('reason') or '')[:30]
+                addrow('Last trade', f'{t_type} @€{last_t.get("price",0):,.2f}  {t_rsn}',
+                       curses.color_pair(2) if t_type == 'BUY' else curses.color_pair(3))
+
+            if row < h - 1:
+                stdscr.addstr(row, 0, '─' * min(w, 80), curses.A_DIM)
             row += 1
 
-        # ── Footer ────────────────────────────────────────────────────────────
-        footer = f'  Q quit  |  auto-refresh every {REFRESH}s  |  last update: {ts}  '
-        safe_add(stdscr, h - 1, 0, footer.ljust(w - 1), REV)
+        # Portfolio summary
+        total_pnl    = total_val - total_start
+        total_pct    = total_pnl / total_start * 100 if total_start else 0
+        total_closed = total_wins + total_losses
+        total_wr     = total_wins / total_closed * 100 if total_closed else 0
+
+        if row < h - 2:
+            stdscr.addstr(row, 0, '  TOTAL PORTFOLIO', curses.A_BOLD)
+            row += 1
+            sign = '+' if total_pnl >= 0 else ''
+            summary = f'  €{total_val:,.2f}   P&L: {sign}€{abs(total_pnl):,.2f} ({sign}{total_pct:.2f}%)   WR: {total_wr:.0f}%'
+            if row < h - 1:
+                stdscr.addstr(row, 0, summary,
+                              curses.color_pair(2) if total_pnl >= 0 else curses.color_pair(3))
+            row += 1
+
+        flags = []
+        if os.path.exists('PAUSE'): flags.append('PAUSED')
+        if os.path.exists('STOP'):  flags.append('STOPPED')
+        if flags and row < h - 1:
+            stdscr.addstr(row, 2, '  '.join(flags), curses.color_pair(3) | curses.A_BOLD)
 
         stdscr.refresh()
+        time.sleep(5)
 
 def main():
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    curses.wrapper(draw_dashboard)
+    try:
+        curses.wrapper(draw)
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == '__main__':
     main()

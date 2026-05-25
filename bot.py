@@ -67,6 +67,9 @@ MIN_TRADE_EUR = 5.0
 STOP_FILE     = 'STOP'
 PAUSE_FILE    = 'PAUSE'
 
+BINANCE_INTERVAL_MAP = {'15m': '15m', '1h': '1h', '4h': '4h'}
+KRAKEN_INTERVAL_MAP  = {'15m': 15,    '1h': 60,   '4h': 240}
+
 KRAKEN_PAIR_MAP = {
     'BTCEUR': 'XBTEUR', 'BTCUSDT': 'XBTUSD',
     'ETHEUR': 'ETHEUR', 'ETHUSDT': 'ETHUSD',
@@ -154,18 +157,20 @@ def detect_symbol(name='BTC'):
             continue
     return f'{name}EUR'
 
-def _fetch_binance(symbol, limit):
-    raw = _get_json(f'{BINANCE_BASE}/klines?symbol={symbol}&interval=15m&limit={limit}', retries=2)
+def _fetch_binance(symbol, limit, timeframe='1h'):
+    iv  = BINANCE_INTERVAL_MAP.get(timeframe, '1h')
+    raw = _get_json(f'{BINANCE_BASE}/klines?symbol={symbol}&interval={iv}&limit={limit}', retries=2)
     return _pack([(c[1], c[2], c[3], c[4], c[5]) for c in raw])
 
-def _fetch_kraken(symbol, limit):
+def _fetch_kraken(symbol, limit, timeframe='1h'):
     pair = KRAKEN_PAIR_MAP.get(symbol)
     if not pair:
         raise RuntimeError(f'No Kraken mapping for {symbol}')
-    data = _get_json(f'https://api.kraken.com/0/public/OHLC?pair={pair}&interval=15')
+    iv   = KRAKEN_INTERVAL_MAP.get(timeframe, 60)
+    data = _get_json(f'https://api.kraken.com/0/public/OHLC?pair={pair}&interval={iv}')
     if data.get('error') and data['error']:
         raise RuntimeError(f'Kraken: {data["error"]}')
-    key = next(k for k in data['result'] if k != 'last')
+    key  = next(k for k in data['result'] if k != 'last')
     rows = data['result'][key][-limit:]
     return _pack([(c[1], c[2], c[3], c[4], c[6]) for c in rows])
 
@@ -177,7 +182,7 @@ def _fetch_coingecko(symbol, limit):
     data = _get_json(f'https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency={currency}&days=7')
     return _closes_to_ohlcv([p[1] for p in data['prices'][-limit:]])
 
-def _fetch_cryptocompare(symbol, limit):
+def _fetch_cryptocompare(symbol, limit, timeframe='1h'):
     for suffix in ('EUR', 'USDT', 'USD'):
         if symbol.endswith(suffix):
             fsym = symbol[:-len(suffix)]
@@ -185,18 +190,23 @@ def _fetch_cryptocompare(symbol, limit):
             break
     else:
         raise RuntimeError(f'Cannot parse symbol: {symbol}')
-    data = _get_json(f'https://min-api.cryptocompare.com/data/v2/histohour?fsym={fsym}&tsym={tsym}&limit={limit}')
+    aggregate = {'15m': 15, '1h': 1, '4h': 4}.get(timeframe, 1)
+    endpoint  = 'histominute' if timeframe == '15m' else 'histohour'
+    data = _get_json(
+        f'https://min-api.cryptocompare.com/data/v2/{endpoint}'
+        f'?fsym={fsym}&tsym={tsym}&limit={limit}&aggregate={aggregate}'
+    )
     if data.get('Response') != 'Success':
         raise RuntimeError(f'CryptoCompare: {data.get("Message")}')
     c = data['Data']['Data']
     return _pack([(x['open'], x['high'], x['low'], x['close'], x['volumefrom']) for x in c])
 
-def fetch_ohlcv(symbol, limit=200):
+def fetch_ohlcv(symbol, limit=200, timeframe='1h'):
     for source, fn in [
-        ('Binance',       lambda: _fetch_binance(symbol, limit)),
-        ('Kraken',        lambda: _fetch_kraken(symbol, limit)),
+        ('Binance',       lambda: _fetch_binance(symbol, limit, timeframe)),
+        ('Kraken',        lambda: _fetch_kraken(symbol, limit, timeframe)),
         ('CoinGecko',     lambda: _fetch_coingecko(symbol, limit)),
-        ('CryptoCompare', lambda: _fetch_cryptocompare(symbol, limit)),
+        ('CryptoCompare', lambda: _fetch_cryptocompare(symbol, limit, timeframe)),
     ]:
         try:
             d = fn()
@@ -605,20 +615,57 @@ def check_health(state):
     if age_h > 24:
         log.warning(f'No trade signal in {age_h:.0f}h — possible data issue')
 
+# ── Drawdown alerts ────────────────────────────────────────────────────────────
+
+def check_drawdown_alerts(state, price):
+    peak      = state.get('peak_value', state['starting_balance'])
+    portfolio = state['balance'] + state['coin_held'] * price
+    if peak <= 0:
+        return
+    dd = (peak - portfolio) / peak
+    if dd >= 0.10:
+        log.warning(f'  !! CRITICAL drawdown {dd*100:.1f}% from peak €{peak:,.2f} — consider pausing')
+    elif dd >= 0.05:
+        log.warning(f'  !! WARNING drawdown {dd*100:.1f}% from peak €{peak:,.2f}')
+
+# ── Equity history ─────────────────────────────────────────────────────────────
+
+def _equity_file(name):
+    return f'equity_{name}.json'
+
+def append_equity(name, timestamp, value):
+    path   = _equity_file(name)
+    points = []
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                points = json.load(f)
+        except Exception:
+            pass
+    points.append({'t': timestamp, 'v': round(value, 2)})
+    points = points[-720:]  # rolling ~30 days of hourly data
+    _atomic_write(path, points)
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
     global STATE_FILE, TRADES_FILE
 
     if len(sys.argv) < 4:
-        print('Usage: python3 bot.py <strategy> <max_checks> <interval> [name] [starting_balance]')
+        print('Usage: python3 bot.py <strategy> <max_checks> <interval> [name] [balance] [--timeframe 1h|4h|15m]')
         sys.exit(1)
 
-    arg_strategy     = sys.argv[1].lower()
-    max_checks       = int(sys.argv[2])
-    interval         = int(sys.argv[3])
-    name             = sys.argv[4].upper() if len(sys.argv) > 4 else 'BTC'
-    starting_balance = float(sys.argv[5]) if len(sys.argv) > 5 else 1000.0
+    argv_flags = sys.argv[1:]
+    tf_flag    = next((a.split('=')[1] if '=' in a else argv_flags[argv_flags.index(a) + 1]
+                       for a in argv_flags if a.startswith('--timeframe')), '1h')
+    timeframe  = tf_flag if tf_flag in BINANCE_INTERVAL_MAP else '1h'
+    pos_args   = [a for a in argv_flags if not a.startswith('--') and a not in BINANCE_INTERVAL_MAP]
+
+    arg_strategy     = pos_args[0].lower() if len(pos_args) > 0 else 'aggressive'
+    max_checks       = int(pos_args[1])    if len(pos_args) > 1 else 4032
+    interval         = int(pos_args[2])    if len(pos_args) > 2 else 0
+    name             = pos_args[3].upper() if len(pos_args) > 3 else 'BTC'
+    starting_balance = float(pos_args[4])  if len(pos_args) > 4 else 1000.0
 
     if arg_strategy not in STRATEGIES:
         print(f'Unknown strategy. Choose: {", ".join(STRATEGIES)}')
@@ -661,7 +708,7 @@ def main():
 
     bar = '=' * 72
     log.info(bar)
-    log.info(f'Crypto Paper Trading Bot v2  [{name}]  strategy={strategy}  {symbol}')
+    log.info(f'Crypto Paper Trading Bot v2  [{name}]  strategy={strategy}  {symbol}  timeframe={timeframe}')
     log.info(f'  {cfg["desc"]}')
     log.info(f'  Budget: €{start:,.0f}  |  Checks: {state["checks_done"]}/{max_checks}')
     log.info(f'  Stop/TP: -{cfg["stop_loss_pct"]*100:.0f}% / +{cfg["take_profit_pct"]*100:.0f}%  '
@@ -687,7 +734,7 @@ def main():
             continue
 
         try:
-            ohlcv = fetch_ohlcv(symbol, 200)
+            ohlcv = fetch_ohlcv(symbol, 200, timeframe)
             ind   = compute_indicators(ohlcv)
             price = ind['price']
 
@@ -718,6 +765,7 @@ def main():
 
             maybe_daily_summary(state, price)
             check_health(state)
+            check_drawdown_alerts(state, price)
 
             trade = execute_trade(signal, state, price, ind, cfg, check_num, reasons)
             if trade:
@@ -732,7 +780,10 @@ def main():
             state['last_check']  = datetime.now(timezone.utc).isoformat()
             state['last_price']  = price
             state['last_rsi']    = ind.get('rsi')
+            state['last_regime'] = regime
+            state['timeframe']   = timeframe
             save_state(state)
+            append_equity(name, state['last_check'], portfolio_after)
 
             pnl     = portfolio_after - start
             wins    = state.get('win_trades', 0)

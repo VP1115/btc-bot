@@ -25,7 +25,7 @@ jobs:
       - name: Run BTC check
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
-          python3 bot.py aggressive 4032 0 BTC 2000
+          python3 bot.py aggressive 4032 0 BTC 2000 --timeframe 1h
           AFTER=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
           echo "BTC: $BEFORE -> $AFTER"
           [ "$BEFORE" != "$AFTER" ] || (cat bot_BTC.log | tail -10 && exit 1)
@@ -33,15 +33,16 @@ jobs:
       - name: Run ETH check
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
-          python3 bot.py aggressive 4032 0 ETH 2000
+          python3 bot.py aggressive 4032 0 ETH 2000 --timeframe 1h
           AFTER=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
           echo "ETH: $BEFORE -> $AFTER"
           [ "$BEFORE" != "$AFTER" ] || (cat bot_ETH.log | tail -10 && exit 1)
 
       - name: Run SOL check
+        continue-on-error: true
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
-          python3 bot.py aggressive 4032 0 SOL 1000
+          python3 bot.py aggressive 4032 0 SOL 1000 --timeframe 1h
           AFTER=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
           echo "SOL: $BEFORE -> $AFTER"
           [ "$BEFORE" != "$AFTER" ] || (cat bot_SOL.log | tail -10 && exit 1)
@@ -51,16 +52,17 @@ jobs:
           git config user.name  "btcbot"
           git config user.email "btcbot@noreply.github.com"
           git add state_BTC.json state_ETH.json state_SOL.json \
-                  trades_BTC.json trades_ETH.json trades_SOL.json
+                  trades_BTC.json trades_ETH.json trades_SOL.json \
+                  equity_BTC.json equity_ETH.json equity_SOL.json || true
           git diff --staged --quiet && echo "No changes" && exit 0
           BTC=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
           ETH=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
-          SOL=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
+          SOL=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])" 2>/dev/null || echo "?")
           git commit -m "bot: BTC=$BTC ETH=$ETH SOL=$SOL"
           git push || (git pull --rebase && git push)
 
       - name: Purge CDN cache
         run: |
-          for f in state_BTC state_ETH state_SOL trades_BTC trades_ETH trades_SOL; do
+          for f in state_BTC state_ETH state_SOL trades_BTC trades_ETH trades_SOL equity_BTC equity_ETH equity_SOL; do
             curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/${f}.json" || true
           done

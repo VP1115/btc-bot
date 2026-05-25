@@ -11,7 +11,6 @@
     h1 { text-align: center; font-size: 15px; letter-spacing: 3px; color: #f0b429; padding: 10px 0 2px; text-transform: uppercase; }
     .subtitle { text-align: center; font-size: 11px; color: #484f58; margin-bottom: 16px; }
 
-    /* ── Total portfolio ── */
     .total-bar {
       background: #161b22; border: 1px solid #21262d; border-radius: 8px;
       padding: 12px 16px; margin-bottom: 14px;
@@ -22,7 +21,6 @@
     .green { color: #3fb950; } .red { color: #f85149; } .yellow { color: #f0b429; }
     .blue { color: #79c0ff; } .dim { color: #484f58; }
 
-    /* ── Asset cards ── */
     .assets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
     @media (max-width: 700px) { .assets { grid-template-columns: 1fr; } }
 
@@ -36,10 +34,13 @@
     .badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: 10px; }
     .badge.live { background: #0d2a1a; color: #3fb950; }
     .badge.paused { background: #2a0d0d; color: #f85149; }
+    .badge.regime { background: #1a1a2a; color: #a371f7; }
 
-    .row { display: flex; justify-content: space-between; margin: 4px 0; }
+    .row { display: flex; justify-content: space-between; margin: 3px 0; }
     .lbl { color: #484f58; font-size: 11px; }
     .val { font-size: 12px; }
+
+    .divider { border: none; border-top: 1px solid #21262d; margin: 7px 0; }
 
     .progress-wrap { background: #21262d; border-radius: 3px; height: 4px; margin: 8px 0 4px; }
     .progress-bar  { height: 100%; border-radius: 3px; transition: width 0.5s; }
@@ -47,18 +48,29 @@
     .bar-eth { background: #79c0ff; }
     .bar-sol { background: #a371f7; }
 
+    /* Sparkline */
+    .sparkline-wrap { margin: 8px 0 4px; height: 36px; }
+    svg.sparkline { width: 100%; height: 36px; }
+    .spark-line { fill: none; stroke-width: 1.5; }
+    .spark-area { opacity: 0.12; }
+    .spark-btc .spark-line { stroke: #f0b429; }
+    .spark-btc .spark-area { fill: #f0b429; }
+    .spark-eth .spark-line { stroke: #79c0ff; }
+    .spark-eth .spark-area { fill: #79c0ff; }
+    .spark-sol .spark-line { stroke: #a371f7; }
+    .spark-sol .spark-area { fill: #a371f7; }
+
     .countdown-sm { font-size: 20px; font-weight: bold; color: #f0b429; }
     .countdown-sm.soon { color: #3fb950; }
     .countdown-sm.overdue { color: #f85149; }
 
-    /* ── Trades table ── */
     .trades-card {
       background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
     }
     .trades-title { font-size: 11px; color: #484f58; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
     th { color: #484f58; text-align: left; padding: 3px 6px 6px; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #21262d; }
-    td { padding: 6px; border-bottom: 1px solid #0d1117; }
+    td { padding: 5px 6px; border-bottom: 1px solid #0d1117; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .buy  { color: #3fb950; font-weight: bold; }
     .sell { color: #f85149; font-weight: bold; }
 
@@ -70,7 +82,6 @@
 <h1>₿ Crypto Paper Trading</h1>
 <div class="subtitle" id="updated">Loading…</div>
 
-<!-- Total portfolio -->
 <div class="total-bar">
   <div>
     <div class="lbl">TOTAL PORTFOLIO</div>
@@ -80,72 +91,116 @@
     <div class="lbl">TOTAL P&amp;L</div>
     <div class="total-pnl" id="total-pnl">–</div>
   </div>
+  <div>
+    <div class="lbl">WIN RATE</div>
+    <div style="font-size:16px;font-weight:bold" id="total-wr">–</div>
+  </div>
   <div style="margin-left:auto; text-align:right">
     <div class="lbl">NEXT CHECK</div>
     <div class="countdown-sm" id="countdown-main">–</div>
   </div>
 </div>
 
-<!-- Per-asset cards -->
 <div class="assets">
+  <!-- BTC card -->
   <div class="asset-card" id="card-BTC">
     <div class="asset-header">
       <div class="asset-name yellow">BTC</div>
       <div class="badge" id="strat-BTC">–</div>
       <div class="badge" id="live-BTC">–</div>
+      <div class="badge regime" id="regime-BTC">–</div>
     </div>
-    <div class="row"><span class="lbl">Price</span>      <span class="val yellow" id="price-BTC">–</span></div>
-    <div class="row"><span class="lbl">Value</span>      <span class="val" id="value-BTC">–</span></div>
-    <div class="row"><span class="lbl">P&amp;L</span>   <span class="val" id="pnl-BTC">–</span></div>
-    <div class="row"><span class="lbl">Cash</span>       <span class="val dim" id="cash-BTC">–</span></div>
-    <div class="row"><span class="lbl">Held</span>       <span class="val dim" id="held-BTC">–</span></div>
-    <div class="row"><span class="lbl">RSI</span>        <span class="val" id="rsi-BTC">–</span></div>
-    <div class="row"><span class="lbl">Last check</span><span class="val dim" id="last-BTC">–</span></div>
+    <div class="row"><span class="lbl">Price</span>        <span class="val yellow" id="price-BTC">–</span></div>
+    <div class="row"><span class="lbl">Value</span>        <span class="val" id="value-BTC">–</span></div>
+    <div class="row"><span class="lbl">P&amp;L</span>     <span class="val" id="pnl-BTC">–</span></div>
+    <div class="row"><span class="lbl">Daily P&amp;L</span><span class="val" id="dpnl-BTC">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Cash</span>         <span class="val dim" id="cash-BTC">–</span></div>
+    <div class="row"><span class="lbl">Held</span>         <span class="val dim" id="held-BTC">–</span></div>
+    <div class="row"><span class="lbl">Entry price</span>  <span class="val dim" id="entry-BTC">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">RSI</span>          <span class="val" id="rsi-BTC">–</span></div>
+    <div class="row"><span class="lbl">Win rate</span>     <span class="val" id="wr-BTC">–</span></div>
+    <div class="row"><span class="lbl">Profit factor</span><span class="val" id="pf-BTC">–</span></div>
+    <div class="row"><span class="lbl">Drawdown</span>     <span class="val" id="dd-BTC">–</span></div>
+    <div class="row"><span class="lbl">Peak</span>         <span class="val green" id="peak-BTC">–</span></div>
+    <div class="row"><span class="lbl">Trough</span>       <span class="val" id="trough-BTC">–</span></div>
+    <div class="row"><span class="lbl">Sharpe</span>       <span class="val" id="sharpe-BTC">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Last check</span>   <span class="val dim" id="last-BTC">–</span></div>
+    <div class="sparkline-wrap"><svg class="sparkline spark-btc" id="spark-BTC"></svg></div>
     <div class="progress-wrap"><div class="progress-bar bar-btc" id="prog-BTC" style="width:0%"></div></div>
     <div class="dim" id="prog-label-BTC" style="font-size:10px">–</div>
   </div>
 
+  <!-- ETH card -->
   <div class="asset-card" id="card-ETH">
     <div class="asset-header">
       <div class="asset-name blue">ETH</div>
       <div class="badge" id="strat-ETH">–</div>
       <div class="badge" id="live-ETH">–</div>
+      <div class="badge regime" id="regime-ETH">–</div>
     </div>
-    <div class="row"><span class="lbl">Price</span>      <span class="val blue" id="price-ETH">–</span></div>
-    <div class="row"><span class="lbl">Value</span>      <span class="val" id="value-ETH">–</span></div>
-    <div class="row"><span class="lbl">P&amp;L</span>   <span class="val" id="pnl-ETH">–</span></div>
-    <div class="row"><span class="lbl">Cash</span>       <span class="val dim" id="cash-ETH">–</span></div>
-    <div class="row"><span class="lbl">Held</span>       <span class="val dim" id="held-ETH">–</span></div>
-    <div class="row"><span class="lbl">RSI</span>        <span class="val" id="rsi-ETH">–</span></div>
-    <div class="row"><span class="lbl">Last check</span><span class="val dim" id="last-ETH">–</span></div>
+    <div class="row"><span class="lbl">Price</span>        <span class="val blue" id="price-ETH">–</span></div>
+    <div class="row"><span class="lbl">Value</span>        <span class="val" id="value-ETH">–</span></div>
+    <div class="row"><span class="lbl">P&amp;L</span>     <span class="val" id="pnl-ETH">–</span></div>
+    <div class="row"><span class="lbl">Daily P&amp;L</span><span class="val" id="dpnl-ETH">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Cash</span>         <span class="val dim" id="cash-ETH">–</span></div>
+    <div class="row"><span class="lbl">Held</span>         <span class="val dim" id="held-ETH">–</span></div>
+    <div class="row"><span class="lbl">Entry price</span>  <span class="val dim" id="entry-ETH">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">RSI</span>          <span class="val" id="rsi-ETH">–</span></div>
+    <div class="row"><span class="lbl">Win rate</span>     <span class="val" id="wr-ETH">–</span></div>
+    <div class="row"><span class="lbl">Profit factor</span><span class="val" id="pf-ETH">–</span></div>
+    <div class="row"><span class="lbl">Drawdown</span>     <span class="val" id="dd-ETH">–</span></div>
+    <div class="row"><span class="lbl">Peak</span>         <span class="val green" id="peak-ETH">–</span></div>
+    <div class="row"><span class="lbl">Trough</span>       <span class="val" id="trough-ETH">–</span></div>
+    <div class="row"><span class="lbl">Sharpe</span>       <span class="val" id="sharpe-ETH">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Last check</span>   <span class="val dim" id="last-ETH">–</span></div>
+    <div class="sparkline-wrap"><svg class="sparkline spark-eth" id="spark-ETH"></svg></div>
     <div class="progress-wrap"><div class="progress-bar bar-eth" id="prog-ETH" style="width:0%"></div></div>
     <div class="dim" id="prog-label-ETH" style="font-size:10px">–</div>
   </div>
 
+  <!-- SOL card -->
   <div class="asset-card" id="card-SOL">
     <div class="asset-header">
       <div class="asset-name" style="color:#a371f7">SOL</div>
       <div class="badge" id="strat-SOL">–</div>
       <div class="badge" id="live-SOL">–</div>
+      <div class="badge regime" id="regime-SOL">–</div>
     </div>
-    <div class="row"><span class="lbl">Price</span>      <span class="val" style="color:#a371f7" id="price-SOL">–</span></div>
-    <div class="row"><span class="lbl">Value</span>      <span class="val" id="value-SOL">–</span></div>
-    <div class="row"><span class="lbl">P&amp;L</span>   <span class="val" id="pnl-SOL">–</span></div>
-    <div class="row"><span class="lbl">Cash</span>       <span class="val dim" id="cash-SOL">–</span></div>
-    <div class="row"><span class="lbl">Held</span>       <span class="val dim" id="held-SOL">–</span></div>
-    <div class="row"><span class="lbl">RSI</span>        <span class="val" id="rsi-SOL">–</span></div>
-    <div class="row"><span class="lbl">Last check</span><span class="val dim" id="last-SOL">–</span></div>
+    <div class="row"><span class="lbl">Price</span>        <span class="val" style="color:#a371f7" id="price-SOL">–</span></div>
+    <div class="row"><span class="lbl">Value</span>        <span class="val" id="value-SOL">–</span></div>
+    <div class="row"><span class="lbl">P&amp;L</span>     <span class="val" id="pnl-SOL">–</span></div>
+    <div class="row"><span class="lbl">Daily P&amp;L</span><span class="val" id="dpnl-SOL">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Cash</span>         <span class="val dim" id="cash-SOL">–</span></div>
+    <div class="row"><span class="lbl">Held</span>         <span class="val dim" id="held-SOL">–</span></div>
+    <div class="row"><span class="lbl">Entry price</span>  <span class="val dim" id="entry-SOL">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">RSI</span>          <span class="val" id="rsi-SOL">–</span></div>
+    <div class="row"><span class="lbl">Win rate</span>     <span class="val" id="wr-SOL">–</span></div>
+    <div class="row"><span class="lbl">Profit factor</span><span class="val" id="pf-SOL">–</span></div>
+    <div class="row"><span class="lbl">Drawdown</span>     <span class="val" id="dd-SOL">–</span></div>
+    <div class="row"><span class="lbl">Peak</span>         <span class="val green" id="peak-SOL">–</span></div>
+    <div class="row"><span class="lbl">Trough</span>       <span class="val" id="trough-SOL">–</span></div>
+    <div class="row"><span class="lbl">Sharpe</span>       <span class="val" id="sharpe-SOL">–</span></div>
+    <hr class="divider">
+    <div class="row"><span class="lbl">Last check</span>   <span class="val dim" id="last-SOL">–</span></div>
+    <div class="sparkline-wrap"><svg class="sparkline spark-sol" id="spark-SOL"></svg></div>
     <div class="progress-wrap"><div class="progress-bar bar-sol" id="prog-SOL" style="width:0%"></div></div>
     <div class="dim" id="prog-label-SOL" style="font-size:10px">–</div>
   </div>
 </div>
 
-<!-- Recent trades -->
 <div class="trades-card">
   <div class="trades-title">Recent Trades (all assets)</div>
   <table>
-    <thead><tr><th>Asset</th><th>Type</th><th>Price</th><th>Coin</th><th>EUR</th><th>Time</th></tr></thead>
-    <tbody id="trades-body"><tr><td colspan="6" style="color:#484f58;text-align:center">Loading…</td></tr></tbody>
+    <thead><tr><th>Asset</th><th>Type</th><th>Price</th><th>Coin</th><th>EUR</th><th>P&amp;L</th><th>Reason</th><th>Time</th></tr></thead>
+    <tbody id="trades-body"><tr><td colspan="8" style="color:#484f58;text-align:center">Loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -156,8 +211,6 @@
   const ASSETS   = ['BTC', 'ETH', 'SOL'];
   const STARTING = { BTC: 2000, ETH: 2000, SOL: 1000 };
 
-  let states    = {};
-  let allTrades = [];
   let nextCheckAt = null;
 
   function fmt(n, dec=2) { return Number(n).toLocaleString('en-IE', {minimumFractionDigits:dec, maximumFractionDigits:dec}); }
@@ -172,7 +225,7 @@
 
   function fmtTime(iso) {
     if (!iso) return '–';
-    return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }
 
   async function fetchJSON(path) {
@@ -181,20 +234,64 @@
     return r.json();
   }
 
-  function updateAsset(name, state, trades) {
-    const price   = state.last_price || 0;
-    const cash    = state.balance || 0;
-    const held    = state.coin_held || 0;
-    const total   = cash + held * price;
-    const start   = state.starting_balance || STARTING[name];
-    const pnl     = total - start;
-    const pnlPct  = pnl / start * 100;
-    const done    = state.checks_done || 0;
-    const maxC    = state.max_checks  || 4032;
-    const intv    = state.interval    || 300;
-    const age     = state.last_check ? (Date.now() - new Date(state.last_check)) / 1000 : 999;
-    const isLive  = age < intv * 3;
-    const rsi     = state.last_rsi;
+  function calcSharpe(equityPoints, timeframe) {
+    if (!equityPoints || equityPoints.length < 3) return null;
+    const vals = equityPoints.map(p => p.v);
+    const rets = [];
+    for (let i = 1; i < vals.length; i++) {
+      if (vals[i-1] > 0) rets.push((vals[i] - vals[i-1]) / vals[i-1]);
+    }
+    if (rets.length < 2) return null;
+    const mu    = rets.reduce((a, b) => a + b, 0) / rets.length;
+    const sigma = Math.sqrt(rets.reduce((a, r) => a + (r - mu) ** 2, 0) / rets.length);
+    if (sigma === 0) return null;
+    const ppy = {'1h': 8760, '4h': 2190, '15m': 35040}[timeframe] || 8760;
+    return mu / sigma * Math.sqrt(ppy);
+  }
+
+  function drawSparkline(svgEl, points) {
+    if (!points || points.length < 2) { svgEl.innerHTML = ''; return; }
+    const W = svgEl.clientWidth || 200, H = 36;
+    const vals = points.map(p => p.v);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const rng = hi - lo || 1;
+    const xs = points.map((_, i) => (i / (points.length - 1)) * W);
+    const ys = points.map(p => H - ((p.v - lo) / rng) * (H - 4) - 2);
+    const pathD = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+    const areaD = pathD + ` L${W},${H} L0,${H} Z`;
+    svgEl.innerHTML = `
+      <path class="spark-area" d="${areaD}"/>
+      <path class="spark-line"  d="${pathD}"/>`;
+  }
+
+  function updateAsset(name, state, equity) {
+    const price    = state.last_price || 0;
+    const cash     = state.balance    || 0;
+    const held     = state.coin_held  || 0;
+    const total    = cash + held * price;
+    const start    = state.starting_balance || STARTING[name];
+    const pnl      = total - start;
+    const pnlPct   = pnl / start * 100;
+    const done     = state.checks_done || 0;
+    const maxC     = state.max_checks  || 4032;
+    const intv     = state.interval    || 300;
+    const age      = state.last_check ? (Date.now() - new Date(state.last_check)) / 1000 : 999;
+    const isLive   = age < intv * 3;
+    const rsi      = state.last_rsi;
+    const regime   = state.last_regime || '–';
+    const wins     = state.win_trades  || 0;
+    const losses   = state.loss_trades || 0;
+    const closed   = wins + losses;
+    const winRate  = closed > 0 ? (wins / closed * 100) : null;
+    const profitEur= state.total_profit_eur || 0;
+    const lossEur  = state.total_loss_eur   || 0;
+    const pf       = lossEur > 0 ? profitEur / lossEur : (profitEur > 0 ? 99 : null);
+    const peak     = state.peak_value   || start;
+    const trough   = state.trough_value || start;
+    const dd       = peak > 0 ? (peak - total) / peak * 100 : 0;
+    const dsVal    = state.daily_start_val || start;
+    const dpnl     = total - dsVal;
+    const sharpe   = calcSharpe(equity, state.timeframe || '1h');
 
     document.getElementById(`price-${name}`).textContent = '€' + fmt(price);
     document.getElementById(`value-${name}`).textContent = '€' + fmt(total);
@@ -203,68 +300,129 @@
     pnlEl.textContent = (pnl >= 0 ? '+' : '') + '€' + fmt(Math.abs(pnl)) + ` (${pnlPct >= 0?'+':''}${fmt(pnlPct)}%)`;
     pnlEl.className = 'val ' + (pnl >= 0 ? 'green' : 'red');
 
+    const dpnlEl = document.getElementById(`dpnl-${name}`);
+    dpnlEl.textContent = (dpnl >= 0 ? '+' : '') + '€' + fmt(Math.abs(dpnl));
+    dpnlEl.className = 'val ' + (dpnl >= 0 ? 'green' : 'red');
+
     document.getElementById(`cash-${name}`).textContent = '€' + fmt(cash);
     document.getElementById(`held-${name}`).textContent = held.toFixed(6) + ' ' + name;
 
+    const entryEl = document.getElementById(`entry-${name}`);
+    if (held > 1e-9 && state.entry_price) {
+      const ep   = state.entry_price;
+      const epnl = price > 0 ? (price - ep) / ep * 100 : 0;
+      entryEl.textContent = '€' + fmt(ep) + ` (${epnl >= 0 ? '+' : ''}${fmt(epnl)}%)`;
+      entryEl.className = 'val ' + (epnl >= 0 ? 'green' : 'red');
+    } else {
+      entryEl.textContent = 'no position';
+      entryEl.className = 'val dim';
+    }
+
     const rsiEl = document.getElementById(`rsi-${name}`);
     if (rsi != null) {
-      rsiEl.textContent = fmt(rsi, 1) + (rsi < 35 ? ' ↓ oversold' : rsi > 65 ? ' ↑ overbought' : ' neutral');
+      rsiEl.textContent = fmt(rsi, 1) + (rsi < 35 ? ' ↓' : rsi > 65 ? ' ↑' : '');
       rsiEl.className = 'val ' + (rsi < 35 ? 'green' : rsi > 65 ? 'red' : 'yellow');
     }
 
-    document.getElementById(`last-${name}`).textContent = relTime(state.last_check);
-    document.getElementById(`strat-${name}`).textContent = (state.strategy || '?').toUpperCase();
+    const wrEl = document.getElementById(`wr-${name}`);
+    wrEl.textContent = winRate != null ? `${fmt(winRate,0)}%  (${wins}W / ${losses}L)` : '–';
+    wrEl.className = 'val ' + (winRate != null ? (winRate >= 50 ? 'green' : 'yellow') : 'dim');
+
+    const pfEl = document.getElementById(`pf-${name}`);
+    pfEl.textContent = pf != null ? fmt(pf) : '–';
+    pfEl.className = 'val ' + (pf != null ? (pf >= 1.5 ? 'green' : pf >= 1 ? 'yellow' : 'red') : 'dim');
+
+    const ddEl = document.getElementById(`dd-${name}`);
+    ddEl.textContent = dd > 0.1 ? `-${fmt(dd, 1)}%` : '–';
+    ddEl.className = 'val ' + (dd >= 10 ? 'red' : dd >= 5 ? 'yellow' : 'green');
+
+    document.getElementById(`peak-${name}`).textContent = '€' + fmt(peak);
+
+    const troughEl = document.getElementById(`trough-${name}`);
+    troughEl.textContent = '€' + fmt(trough);
+    troughEl.className = 'val ' + (trough < start ? 'red' : 'dim');
+
+    const sharpeEl = document.getElementById(`sharpe-${name}`);
+    if (sharpe !== null) {
+      sharpeEl.textContent = fmt(sharpe, 2);
+      sharpeEl.className = 'val ' + (sharpe >= 1 ? 'green' : sharpe < 0 ? 'red' : 'yellow');
+    } else {
+      sharpeEl.textContent = '–';
+      sharpeEl.className = 'val dim';
+    }
+
+    document.getElementById(`regime-${name}`).textContent = regime;
+    document.getElementById(`last-${name}`).textContent   = relTime(state.last_check);
+    document.getElementById(`strat-${name}`).textContent  = (state.strategy || '?').toUpperCase();
 
     const liveEl = document.getElementById(`live-${name}`);
     liveEl.textContent = isLive ? 'LIVE' : 'WAITING';
-    liveEl.className = 'badge ' + (isLive ? 'live' : 'paused');
+    liveEl.className   = 'badge ' + (isLive ? 'live' : 'paused');
 
     const pct = done / maxC * 100;
     document.getElementById(`prog-${name}`).style.width = pct + '%';
     document.getElementById(`prog-label-${name}`).textContent = `${done}/${maxC} checks (${fmt(pct,1)}%)`;
 
-    // Use most recent last_check for countdown
     if (state.last_check) {
       const next = new Date(state.last_check).getTime() + intv * 1000;
       if (!nextCheckAt || next > nextCheckAt) nextCheckAt = next;
     }
 
-    return { total, pnl, start };
+    // Sparkline
+    if (equity && equity.length > 1) {
+      const svgEl = document.getElementById(`spark-${name}`);
+      drawSparkline(svgEl, equity);
+    }
+
+    return { total, pnl, start, wins, losses };
   }
 
   async function refresh() {
     try {
       const [stateBTC, stateETH, stateSOL,
-             tradesBTC, tradesETH, tradesSOL] = await Promise.all([
+             tradesBTC, tradesETH, tradesSOL,
+             equityBTC, equityETH, equitySOL] = await Promise.all([
         fetchJSON('state_BTC.json'),
         fetchJSON('state_ETH.json'),
         fetchJSON('state_SOL.json'),
         fetchJSON('trades_BTC.json').catch(() => []),
         fetchJSON('trades_ETH.json').catch(() => []),
         fetchJSON('trades_SOL.json').catch(() => []),
+        fetchJSON('equity_BTC.json').catch(() => []),
+        fetchJSON('equity_ETH.json').catch(() => []),
+        fetchJSON('equity_SOL.json').catch(() => []),
       ]);
-
-      states = { BTC: stateBTC, ETH: stateETH, SOL: stateSOL };
 
       nextCheckAt = null;
       const results = {
-        BTC: updateAsset('BTC', stateBTC, tradesBTC),
-        ETH: updateAsset('ETH', stateETH, tradesETH),
-        SOL: updateAsset('SOL', stateSOL, tradesSOL),
+        BTC: updateAsset('BTC', stateBTC, equityBTC),
+        ETH: updateAsset('ETH', stateETH, equityETH),
+        SOL: updateAsset('SOL', stateSOL, equitySOL),
       };
 
-      // Total portfolio
-      const totalVal = results.BTC.total + results.ETH.total + results.SOL.total;
-      const totalPnl = results.BTC.pnl   + results.ETH.pnl   + results.SOL.pnl;
-      const totalStart = results.BTC.start + results.ETH.start + results.SOL.start;
-      const totalPct = totalPnl / totalStart * 100;
+      const totalVal   = results.BTC.total + results.ETH.total + results.SOL.total;
+      const totalPnl   = results.BTC.pnl   + results.ETH.pnl   + results.SOL.pnl;
+      const totalStart = STARTING.BTC + STARTING.ETH + STARTING.SOL;
+      const totalPct   = totalPnl / totalStart * 100;
+      const totalWins  = results.BTC.wins  + results.ETH.wins  + results.SOL.wins;
+      const totalLoss  = results.BTC.losses + results.ETH.losses + results.SOL.losses;
+      const totalClosed= totalWins + totalLoss;
 
       document.getElementById('total-val').textContent = '€' + fmt(totalVal);
       const tpEl = document.getElementById('total-pnl');
       tpEl.textContent = (totalPnl >= 0 ? '+' : '') + '€' + fmt(Math.abs(totalPnl)) + ` (${totalPct >= 0?'+':''}${fmt(totalPct)}%)`;
       tpEl.className = 'total-pnl ' + (totalPnl >= 0 ? 'green' : 'red');
 
-      // Merge + sort trades
+      const wrEl = document.getElementById('total-wr');
+      if (totalClosed > 0) {
+        const wr = totalWins / totalClosed * 100;
+        wrEl.textContent  = fmt(wr, 0) + '%';
+        wrEl.className    = (wr >= 50 ? 'green' : 'yellow');
+      } else {
+        wrEl.textContent = '–';
+        wrEl.className   = 'dim';
+      }
+
       const tagged = [
         ...tradesBTC.map(t => ({...t, asset:'BTC'})),
         ...tradesETH.map(t => ({...t, asset:'ETH'})),
@@ -273,18 +431,22 @@
 
       const tbody = document.getElementById('trades-body');
       if (tagged.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:#484f58;text-align:center">No trades yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="color:#484f58;text-align:center">No trades yet</td></tr>';
       } else {
-        tbody.innerHTML = tagged.slice(0, 15).map(t => {
-          const isBuy  = t.type === 'BUY';
-          const coin   = isBuy ? t.coin_bought : t.coin_sold;
-          const eur    = isBuy ? t.eur_spent   : t.eur_received;
+        tbody.innerHTML = tagged.slice(0, 10).map(t => {
+          const isBuy = t.type === 'BUY';
+          const coin  = isBuy ? t.coin_bought : t.coin_sold;
+          const eur   = isBuy ? t.eur_spent   : t.eur_received;
+          const pnl   = t.pnl != null ? `<span class="${t.pnl >= 0 ? 'green' : 'red'}">${t.pnl >= 0 ? '+' : ''}€${fmt(Math.abs(t.pnl))}</span>` : '–';
+          const reason= (t.reason || '').replace(/\[.*?\]/, '').trim().slice(0, 40);
           return `<tr>
             <td style="font-weight:bold">${t.asset}</td>
             <td class="${isBuy?'buy':'sell'}">${t.type}</td>
             <td>€${fmt(t.price)}</td>
             <td>${Number(coin||0).toFixed(5)}</td>
             <td>€${fmt(eur||0)}</td>
+            <td>${pnl}</td>
+            <td class="dim" title="${t.reason||''}">${reason||'–'}</td>
             <td class="dim">${fmtTime(t.timestamp)}</td>
           </tr>`;
         }).join('');
