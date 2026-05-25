@@ -138,5 +138,18 @@
     "coin_sold": 0.0,
     "balance_after": 2013.9349,
     "coin_after": 0.0
+  },
+  {
+    "type": "BUY",
+    "check": 222,
+    "timestamp": "2026-05-25T12:45:30.316794+00:00",
+    "price": 66324.9,
+    "eur_spent": 1812.5414,
+    "coin_bought": 0.02732822,
+    "balance_after": 201.3935,
+    "coin_after": 0.02732822,
+    "reason": "Lower BB bounce (price=66324.90 \u2264 66277.59)",
+    "atr": 91.6378,
+    "rsi": 42.9
   }
 ]
