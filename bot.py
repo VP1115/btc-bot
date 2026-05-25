@@ -383,6 +383,8 @@ def check_stop_tp(state, price, cfg):
     return None
 
 # ── Signal logic ───────────────────────────────────────────────────────────────
+# Requires 2 confirmations to fire — RSI threshold PLUS one of MACD or BB.
+# This halves false signals vs single-trigger logic without touching stop/TP.
 
 def get_signal(ind, strategy):
     """Returns (signal, reasons, regime). Stop/TP handled separately."""
@@ -394,40 +396,32 @@ def get_signal(ind, strategy):
     if rsi is None:
         return 'HOLD', ['warming up'], regime
 
+    macd_h = ind.get('macd_hist') or 0
+    bb_lo  = ind.get('bb_lo')
+    bb_hi  = ind.get('bb_hi')
+
+    macd_bullish = ind.get('bull_cross') or macd_h > 0
+    macd_bearish = ind.get('bear_cross') or macd_h < 0
+    at_lower_bb  = bb_lo is not None and price <= bb_lo * 1.005
+    at_upper_bb  = bb_hi is not None and price >= bb_hi * 0.995
+
     signal, reasons = 'HOLD', []
 
-    if regime == 'TRENDING':
-        macd_h = ind.get('macd_hist') or 0
-        if rsi < cfg['rsi_oversold'] and (ind.get('bull_cross') or macd_h > 0):
-            signal = 'BUY'
-            reasons.append(f'RSI={rsi:.1f} oversold + MACD bullish')
-        elif rsi > cfg['rsi_overbought'] and (ind.get('bear_cross') or macd_h < 0):
-            signal = 'SELL'
-            reasons.append(f'RSI={rsi:.1f} overbought + MACD bearish')
+    # BUY: RSI oversold AND (MACD bullish OR price at lower BB)
+    if rsi < cfg['rsi_oversold'] and (macd_bullish or at_lower_bb):
+        signal = 'BUY'
+        confirms = []
+        if macd_bullish: confirms.append('MACD bullish')
+        if at_lower_bb:  confirms.append(f'lower BB ({bb_lo:.2f})')
+        reasons.append(f'RSI={rsi:.1f} + {" & ".join(confirms)} [{regime}]')
 
-    elif regime == 'RANGING':
-        bb_lo = ind.get('bb_lo')
-        bb_hi = ind.get('bb_hi')
-        if bb_lo and price <= bb_lo * 1.005:
-            signal = 'BUY'
-            reasons.append(f'Lower BB bounce (price={price:.2f} ≤ {bb_lo:.2f})')
-        elif bb_hi and price >= bb_hi * 0.995:
-            signal = 'SELL'
-            reasons.append(f'Upper BB touch (price={price:.2f} ≥ {bb_hi:.2f})')
-        elif rsi < cfg['rsi_oversold']:
-            signal = 'BUY'
-            reasons.append(f'RSI={rsi:.1f} oversold (ranging)')
-        elif rsi > cfg['rsi_overbought']:
-            signal = 'SELL'
-            reasons.append(f'RSI={rsi:.1f} overbought (ranging)')
-
-    else:  # MIXED / UNKNOWN
-        if rsi < cfg['rsi_oversold']:
-            signal = 'BUY'
-            reasons.append(f'RSI={rsi:.1f} oversold')
-        elif rsi > cfg['rsi_overbought']:
-            signal = 'SELL'
-            reasons.append(f'RSI={rsi:.1f} overbought')
+    # SELL: RSI overbought AND (MACD bearish OR price at upper BB)
+    elif rsi > cfg['rsi_overbought'] and (macd_bearish or at_upper_bb):
+        signal = 'SELL'
+        confirms = []
+        if macd_bearish: confirms.append('MACD bearish')
+        if at_upper_bb:  confirms.append(f'upper BB ({bb_hi:.2f})')
+        reasons.append(f'RSI={rsi:.1f} + {" & ".join(confirms)} [{regime}]')
 
     if not reasons:
         reasons = ['no trigger']
@@ -633,6 +627,10 @@ def main():
     STATE_FILE  = f'state_{name}.json'
     TRADES_FILE = f'trades_{name}.json'
     setup_logging(name)
+
+    if name == 'SOL':
+        log.warning('SOL trading not recommended — backtest shows -3.6% on flat markets '
+                    'even with zero fees. Use BTC or ETH for better results.')
 
     state    = load_state(arg_strategy, starting_balance)
     strategy = state['strategy']

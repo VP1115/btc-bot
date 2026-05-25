@@ -1,41 +1,90 @@
 #!/usr/bin/env python3
 """
-Backtester — simulate a strategy on 90 days of historical hourly data.
-Usage: python3 backtest.py [strategy] [name] [starting_balance]
-       python3 backtest.py aggressive BTC 2000
-       python3 backtest.py aggressive SOL 1000
-Fees: 0.1% per trade + 0.05% slippage.
+Backtester — simulate a strategy on 90 days of historical data.
+Usage: python3 backtest.py [strategy] [name] [starting_balance] [flags]
+       python3 backtest.py aggressive BTC 1000
+       python3 backtest.py aggressive BTC 1000 --timeframe 4h
+       python3 backtest.py aggressive BTC 1000 --no-fees
+       python3 backtest.py aggressive BTC 1000 --binance-taker
+
+Fees (default): 0.075%/side maker + 0.02% slippage  (Binance BNB discount)
+--binance-taker: 0.1%/side taker + 0.02% slippage   (worst case)
+--no-fees:       0% fees, 0% slippage                (sanity check)
+--timeframe:     1h (default) or 4h
 """
 
 import sys, os, math, logging
-logging.basicConfig(level=logging.WARNING)   # suppress INFO from bot.py imports
+logging.basicConfig(level=logging.WARNING)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bot import (
-    _get_json, _fetch_cryptocompare, compute_indicators,
+    _get_json, compute_indicators,
     get_signal, check_stop_tp, calc_position_eur,
     STRATEGIES, MIN_TRADE_EUR,
 )
 
-FEE_PCT      = 0.001    # 0.1%
-SLIPPAGE_PCT = 0.0005   # 0.05%
+# Default: Binance maker fee with BNB discount
+DEFAULT_FEE      = 0.00075   # 0.075% per side
+DEFAULT_SLIPPAGE = 0.0002    # 0.02% (limit orders)
+TAKER_FEE        = 0.001     # 0.1% per side
 
 # ── Data fetching ──────────────────────────────────────────────────────────────
 
-def fetch_history(symbol, days=90):
-    """Fetch up to 90 days of hourly OHLCV from CryptoCompare (free, no key)."""
-    limit = min(days * 24, 2000)
-    print(f'Fetching {limit}h of history for {symbol} from CryptoCompare…')
-    return _fetch_cryptocompare(symbol, limit)
+def fetch_history(symbol, timeframe='1h', days=90):
+    """Fetch OHLCV from CryptoCompare. Timeframe: '1h' or '4h'."""
+    for suffix in ('EUR', 'USDT', 'USD'):
+        if symbol.endswith(suffix):
+            fsym = symbol[:-len(suffix)]
+            tsym = suffix if suffix in ('EUR', 'USD') else 'USD'
+            break
+    else:
+        raise ValueError(f'Cannot parse symbol: {symbol}')
+
+    if timeframe == '4h':
+        limit     = min(days * 6, 2000)
+        aggregate = 4
+        candle_h  = 4
+    else:  # 1h
+        limit     = min(days * 24, 2000)
+        aggregate = 1
+        candle_h  = 1
+
+    url  = (f'https://min-api.cryptocompare.com/data/v2/histohour'
+            f'?fsym={fsym}&tsym={tsym}&limit={limit}&aggregate={aggregate}')
+    data = _get_json(url)
+    if data.get('Response') != 'Success':
+        raise RuntimeError(f'CryptoCompare: {data.get("Message")}')
+    c = data['Data']['Data']
+    ohlcv = {
+        'opens':   [float(x['open'])       for x in c],
+        'highs':   [float(x['high'])       for x in c],
+        'lows':    [float(x['low'])        for x in c],
+        'closes':  [float(x['close'])      for x in c],
+        'volumes': [float(x['volumefrom']) for x in c],
+    }
+    print(f'Fetched {len(c)} {timeframe} candles for {symbol}  '
+          f'({ohlcv["closes"][0]:.2f} → {ohlcv["closes"][-1]:.2f})')
+    return ohlcv, candle_h
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
 
-def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
+def run_backtest(strategy, symbol, starting_balance=1000.0, days=90,
+                 no_fees=False, taker=False, timeframe='1h'):
     cfg = STRATEGIES[strategy]
 
-    ohlcv = fetch_history(symbol, days)
-    n     = len(ohlcv['closes'])
-    print(f'Got {n} candles  ({ohlcv["closes"][0]:.2f} → {ohlcv["closes"][-1]:.2f})\n')
+    if no_fees:
+        fee_pct, slippage_pct = 0.0, 0.0
+        fee_label = 'no fees/slippage'
+    elif taker:
+        fee_pct, slippage_pct = TAKER_FEE, DEFAULT_SLIPPAGE
+        fee_label = f'taker {TAKER_FEE*100:.3f}%/side + slippage {DEFAULT_SLIPPAGE*100:.2f}%'
+    else:
+        fee_pct, slippage_pct = DEFAULT_FEE, DEFAULT_SLIPPAGE
+        fee_label = f'maker {DEFAULT_FEE*100:.3f}%/side + slippage {DEFAULT_SLIPPAGE*100:.2f}%'
+
+    ohlcv, candle_h = fetch_history(symbol, timeframe, days)
+    n = len(ohlcv['closes'])
+    print(f'[{fee_label}]\n')
 
     state = {
         'strategy':         strategy,
@@ -75,16 +124,16 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
 
         # Apply slippage to execution price
         if signal == 'BUY':
-            exec_price = price * (1 + SLIPPAGE_PCT)
+            exec_price = price * (1 + slippage_pct)
         elif signal == 'SELL':
-            exec_price = price * (1 - SLIPPAGE_PCT)
+            exec_price = price * (1 - slippage_pct)
         else:
             exec_price = price
 
         if signal == 'BUY' and state['balance'] >= MIN_TRADE_EUR and state['coin_held'] < 1e-9:
             eur_in   = min(calc_position_eur(state, exec_price, ind, cfg), state['balance'])
             coin_out = eur_in / exec_price
-            fee      = eur_in * FEE_PCT
+            fee      = eur_in * fee_pct
             state['balance']    -= eur_in + fee
             state['coin_held']  += coin_out
             state['entry_price'] = exec_price
@@ -96,7 +145,7 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
             entry    = state.get('entry_price') or exec_price
             coin_out = state['coin_held']
             eur_in   = coin_out * exec_price
-            fee      = eur_in * FEE_PCT
+            fee      = eur_in * fee_pct
             pnl      = eur_in - fee - coin_out * entry
             state['balance']    += eur_in - fee
             state['coin_held']   = 0.0
@@ -114,8 +163,9 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
         portfolio = state['balance'] + state['coin_held'] * price
         equity.append(portfolio)
 
-        # Daily return (every 24 candles)
-        if (i - warmup) % 24 == 0:
+        # Daily return (every 24h worth of candles)
+        candles_per_day = max(1, 24 // candle_h)
+        if (i - warmup) % candles_per_day == 0:
             ret = (portfolio - prev_day_val) / prev_day_val if prev_day_val > 0 else 0.0
             daily_rets.append(ret)
             prev_day_val = portfolio
@@ -143,8 +193,8 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
     buy_hold   = ohlcv['closes'][-1] / ohlcv['closes'][warmup] * 100 - 100
 
     _print_results(strategy, symbol, starting_balance, final_val, total_ret,
-                   sharpe, max_dd, state, win_rate, pf, buy_hold)
-    _ascii_chart(equity, width=60, height=14)
+                   sharpe, max_dd, state, win_rate, pf, buy_hold, fee_label, timeframe)
+    _ascii_chart(equity, width=60, height=14, timeframe=timeframe)
     return {
         'total_return_pct':  total_ret,
         'final_value':       final_val,
@@ -159,9 +209,10 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90):
 # ── Output ─────────────────────────────────────────────────────────────────────
 
 def _print_results(strategy, symbol, start, final, ret, sharpe, max_dd,
-                   state, win_rate, pf, buy_hold):
+                   state, win_rate, pf, buy_hold, fee_label='', timeframe='1h'):
     print(f'\n{"="*54}')
-    print(f'  Backtest: {symbol}  strategy={strategy}  90 days')
+    print(f'  Backtest: {symbol}  strategy={strategy}  90d  {timeframe}')
+    print(f'  {fee_label}')
     print(f'{"="*54}')
     print(f'  Total Return    : {ret:>+7.2f}%  (buy & hold: {buy_hold:>+.2f}%)')
     print(f'  Start → End     :  €{start:>9,.2f} → €{final:>9,.2f}')
@@ -172,7 +223,7 @@ def _print_results(strategy, symbol, start, final, ret, sharpe, max_dd,
     print(f'  Profit Factor   : {pf:>7.2f}')
     print(f'{"="*54}')
 
-def _ascii_chart(equity, width=60, height=14):
+def _ascii_chart(equity, width=60, height=14, timeframe='1h'):
     if not equity:
         return
     step   = max(1, len(equity) // width)
@@ -180,7 +231,7 @@ def _ascii_chart(equity, width=60, height=14):
     lo, hi = min(pts), max(pts)
     rng    = hi - lo or 1.0
 
-    print('\n  Equity curve (90 days):')
+    print(f'\n  Equity curve (90 days, {timeframe} candles):')
     for row in range(height, -1, -1):
         threshold = lo + rng * row / height
         bar       = ''.join('█' if v >= threshold else ' ' for v in pts)
@@ -199,9 +250,17 @@ def _ascii_chart(equity, width=60, height=14):
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
-    strategy        = sys.argv[1].lower() if len(sys.argv) > 1 else 'aggressive'
-    name            = sys.argv[2].upper() if len(sys.argv) > 2 else 'BTC'
-    starting_balance = float(sys.argv[3]) if len(sys.argv) > 3 else 2000.0
+    argv = sys.argv[1:]
+    no_fees   = '--no-fees'       in argv
+    taker     = '--binance-taker' in argv
+    tf_flag   = next((a.split('=')[1] if '=' in a else argv[argv.index(a)+1]
+                      for a in argv if a.startswith('--timeframe')), '1h')
+    timeframe = tf_flag if tf_flag in ('1h', '4h') else '1h'
+
+    args             = [a for a in argv if not a.startswith('--') and a not in ('1h', '4h')]
+    strategy         = args[0].lower() if len(args) > 0 else 'aggressive'
+    name             = args[1].upper() if len(args) > 1 else 'BTC'
+    starting_balance = float(args[2]) if len(args) > 2 else 1000.0
 
     if strategy not in STRATEGIES:
         print(f'Strategy must be one of: {", ".join(STRATEGIES)}')
@@ -210,7 +269,8 @@ def main():
     symbol_map = {'BTC': 'BTCEUR', 'ETH': 'ETHEUR', 'SOL': 'SOLEUR'}
     symbol = symbol_map.get(name, f'{name}EUR')
 
-    run_backtest(strategy, symbol, starting_balance)
+    run_backtest(strategy, symbol, starting_balance,
+                 no_fees=no_fees, taker=taker, timeframe=timeframe)
 
 if __name__ == '__main__':
     main()
