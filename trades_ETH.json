@@ -88,5 +88,18 @@
     "coin_sold": 1.001e-05,
     "balance_after": 2015.0992,
     "coin_after": 1.11e-06
+  },
+  {
+    "type": "SELL",
+    "check": 141,
+    "timestamp": "2026-05-25T07:50:36.176532+00:00",
+    "price": 1813.52,
+    "eur_received": 0.002,
+    "coin_sold": 1.11e-06,
+    "balance_after": 2015.1012,
+    "coin_after": 0.0,
+    "pnl": 0.0,
+    "entry_price": 1813.52,
+    "reason": "Upper BB touch (price=1813.52 \u2265 1816.38)"
   }
 ]
