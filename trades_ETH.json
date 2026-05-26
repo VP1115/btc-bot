@@ -127,5 +127,19 @@
     "pnl": 36.0055,
     "entry_price": 1796.19,
     "reason": "RSI=64.1 + upper BB (1835.49) [MIXED]"
+  },
+  {
+    "type": "BUY",
+    "check": 477,
+    "timestamp": "2026-05-26T17:01:01.701002+00:00",
+    "price": 1787.067342,
+    "eur_spent": 1839.4345,
+    "fee": 1.3796,
+    "coin_bought": 1.0285314,
+    "balance_after": 204.3816,
+    "coin_after": 1.0285314,
+    "reason": "RSI=37.5 + lower BB (1781.22) [RANGING]",
+    "atr": 12.8304,
+    "rsi": 37.46
   }
 ]
