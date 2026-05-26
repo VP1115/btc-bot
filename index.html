@@ -274,9 +274,9 @@
     const pnlPct   = pnl / start * 100;
     const done     = state.checks_done || 0;
     const maxC     = state.max_checks  || 4032;
-    const intv     = state.interval    || 300;
+    const intv     = state.interval    || 3600;
     const age      = state.last_check ? (Date.now() - new Date(state.last_check)) / 1000 : 999;
-    const isLive   = age < intv * 3;
+    const isLive   = age < intv * 1.5;
     const rsi      = state.last_rsi;
     const regime   = state.last_regime || '–';
     const wins     = state.win_trades  || 0;
