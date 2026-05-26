@@ -1,7 +1,7 @@
 {
   "strategy": "aggressive",
   "symbol": "BTCEUR",
-  "balance": 2042.5475953142825,
+  "balance": 2032.5853503942824,
   "checks_done": 284,
   "total_trades": 6,
   "buys": 4,
@@ -21,7 +21,7 @@
   "win_trades": 2,
   "loss_trades": 0,
   "total_profit_eur": 31.130008703928752,
-  "total_loss_eur": 0.0,
+  "total_loss_eur": 9.96224492,
   "last_signal": "SELL",
   "last_signal_time": "2026-05-26T14:26:32.122021+00:00",
   "daily_start_val": 2011.4175866103537,

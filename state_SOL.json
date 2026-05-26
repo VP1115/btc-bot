@@ -1,7 +1,7 @@
 {
   "strategy": "aggressive",
   "symbol": "SOLEUR",
-  "balance": 1021.887394675732,
+  "balance": 1018.238324025732,
   "coin_held": 0.0,
   "checks_done": 475,
   "total_trades": 6,
@@ -21,7 +21,7 @@
   "win_trades": 2,
   "loss_trades": 0,
   "total_profit_eur": 10.087603018185291,
-  "total_loss_eur": 0.0,
+  "total_loss_eur": 3.64907065,
   "last_signal": "SELL",
   "last_signal_time": "2026-05-26T14:26:42.889806+00:00",
   "daily_start_val": 1013.481959831237,

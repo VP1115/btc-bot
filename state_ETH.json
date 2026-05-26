@@ -1,7 +1,7 @@
 {
   "strategy": "aggressive",
   "symbol": "ETHEUR",
-  "balance": 2051.1066371159445,
+  "balance": 2043.8160628509445,
   "coin_held": 0.0,
   "checks_done": 475,
   "total_trades": 12,
@@ -21,7 +21,7 @@
   "win_trades": 2,
   "loss_trades": 0,
   "total_profit_eur": 36.005465459194966,
-  "total_loss_eur": 0.0,
+  "total_loss_eur": 7.290574265,
   "last_signal": "SELL",
   "last_signal_time": "2026-05-26T10:40:35.944576+00:00",
   "daily_start_val": 2015.1011716567493,
