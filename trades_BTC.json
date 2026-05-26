@@ -177,5 +177,18 @@
     "reason": "RSI=39.2 + lower BB (65993.73) [MIXED]",
     "atr": 251.4929,
     "rsi": 39.2
+  },
+  {
+    "type": "SELL",
+    "check": 283,
+    "timestamp": "2026-05-26T14:26:32.121262+00:00",
+    "price": 67001.6,
+    "eur_received": 1841.4058,
+    "coin_sold": 0.02748301,
+    "balance_after": 2042.5476,
+    "coin_after": 0.0,
+    "pnl": 31.13,
+    "entry_price": 65868.9,
+    "reason": "RSI=66.3 + upper BB (66764.75) [MIXED]"
   }
 ]

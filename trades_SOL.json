@@ -54,5 +54,18 @@
     "reason": "RSI=37.1 + lower BB (73.01) [RANGING]",
     "atr": 0.4992,
     "rsi": 37.11
+  },
+  {
+    "type": "SELL",
+    "check": 474,
+    "timestamp": "2026-05-26T14:26:42.889367+00:00",
+    "price": 73.71872003685078,
+    "eur_received": 920.7074,
+    "coin_sold": 12.48946557,
+    "balance_after": 1021.8874,
+    "coin_after": 0.0,
+    "pnl": 10.0876,
+    "entry_price": 72.911,
+    "reason": "RSI=60.4 + upper BB (73.84) [RANGING]"
   }
 ]
