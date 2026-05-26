@@ -64,6 +64,8 @@ STRATEGIES = {
 
 BINANCE_BASE  = 'https://api.binance.com/api/v3'
 MIN_TRADE_EUR = 5.0
+FEE_PCT       = 0.00075   # 0.075% maker fee (Binance BNB discount)
+SLIPPAGE_PCT  = 0.0002    # 0.02% limit-order slippage
 STOP_FILE     = 'STOP'
 PAUSE_FILE    = 'PAUSE'
 
@@ -531,18 +533,21 @@ def execute_trade(signal, state, price, ind, cfg, check_num, reasons):
     rsn = '; '.join(reasons)
 
     if signal == 'BUY' and state['balance'] >= MIN_TRADE_EUR and state.get('coin_held', 0) < 1e-9:
-        eur_in   = min(calc_position_eur(state, price, ind, cfg), state['balance'])
-        coin_out = eur_in / price
+        exec_price = price * (1 + SLIPPAGE_PCT)
+        eur_in     = min(calc_position_eur(state, price, ind, cfg), state['balance'])
+        fee        = eur_in * FEE_PCT
+        coin_out   = (eur_in - fee) / exec_price
         state['balance']    -= eur_in
         state['coin_held']  += coin_out
-        state['entry_price'] = price
-        state['trail_peak']  = price
+        state['entry_price'] = exec_price
+        state['trail_peak']  = exec_price
         state['total_trades'] += 1
         state['buys']         += 1
-        log.info(f'  >> BUY  €{eur_in:>10,.2f} → {coin_out:.6f}  @  €{price:,.2f}  [{rsn}]')
+        log.info(f'  >> BUY  €{eur_in:>10,.2f} → {coin_out:.6f}  @  €{exec_price:,.2f}  fee=€{fee:.2f}  [{rsn}]')
         return {
             'type': 'BUY', 'check': check_num, 'timestamp': ts,
-            'price': price, 'eur_spent': round(eur_in, 4),
+            'price': exec_price, 'eur_spent': round(eur_in, 4),
+            'fee': round(fee, 4),
             'coin_bought': round(coin_out, 8),
             'balance_after': round(state['balance'], 4),
             'coin_after': round(state['coin_held'], 8),
@@ -550,10 +555,13 @@ def execute_trade(signal, state, price, ind, cfg, check_num, reasons):
         }
 
     if signal == 'SELL' and state.get('coin_held', 0) > 1e-9:
-        entry    = state.get('entry_price') or price
-        coin_out = state['coin_held']
-        eur_in   = coin_out * price
-        pnl      = eur_in - coin_out * entry
+        exec_price = price * (1 - SLIPPAGE_PCT)
+        entry      = state.get('entry_price') or exec_price
+        coin_out   = state['coin_held']
+        gross      = coin_out * exec_price
+        fee        = gross * FEE_PCT
+        eur_in     = gross - fee
+        pnl        = eur_in - coin_out * entry
         state['coin_held']  -= coin_out
         state['balance']    += eur_in
         state['entry_price'] = None
@@ -566,10 +574,11 @@ def execute_trade(signal, state, price, ind, cfg, check_num, reasons):
         else:
             state['loss_trades']      += 1
             state['total_loss_eur']   += abs(pnl)
-        log.info(f'  >> SELL {coin_out:.6f} → €{eur_in:>10,.2f}  @  €{price:,.2f}  pnl={pnl:+.2f}  [{rsn}]')
+        log.info(f'  >> SELL {coin_out:.6f} → €{eur_in:>10,.2f}  @  €{exec_price:,.2f}  fee=€{fee:.2f}  pnl={pnl:+.2f}  [{rsn}]')
         return {
             'type': 'SELL', 'check': check_num, 'timestamp': ts,
-            'price': price, 'eur_received': round(eur_in, 4),
+            'price': exec_price, 'eur_received': round(eur_in, 4),
+            'fee': round(fee, 4),
             'coin_sold': round(coin_out, 8),
             'balance_after': round(state['balance'], 4),
             'coin_after': round(state['coin_held'], 8),
