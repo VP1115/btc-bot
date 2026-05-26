@@ -101,5 +101,18 @@
     "pnl": 0.0,
     "entry_price": 1813.52,
     "reason": "Upper BB touch (price=1813.52 \u2265 1816.38)"
+  },
+  {
+    "type": "BUY",
+    "check": 353,
+    "timestamp": "2026-05-26T01:05:30.623066+00:00",
+    "price": 1796.19,
+    "eur_spent": 1813.5911,
+    "coin_bought": 1.00968776,
+    "balance_after": 201.5101,
+    "coin_after": 1.00968776,
+    "reason": "RSI=38.6 + lower BB (1798.57) [RANGING]",
+    "atr": 10.1842,
+    "rsi": 38.58
   }
 ]
