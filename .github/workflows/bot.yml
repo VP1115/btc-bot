@@ -18,7 +18,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # BTC disabled 2026-05 — mean reversion unprofitable across adx 20/22 + RSI 32/35 (best PF 0.92). Re-enable only with a BTC-specific strategy or different regime.
       - name: Run BTC check
+        if: false
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
           python3 bot.py aggressive 4032 0 BTC 2000 --timeframe 1h
@@ -49,17 +51,14 @@ jobs:
         run: |
           git config user.name  "btcbot"
           git config user.email "btcbot@noreply.github.com"
-          git add state_BTC.json state_ETH.json \
-                  trades_BTC.json trades_ETH.json \
-                  equity_BTC.json equity_ETH.json || true
+          git add state_ETH.json trades_ETH.json equity_ETH.json || true
           git diff --staged --quiet && echo "No changes" && exit 0
-          BTC=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
           ETH=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
-          git commit -m "bot: BTC=$BTC ETH=$ETH"
+          git commit -m "bot: ETH=$ETH"
           git push || (git pull --rebase && git push)
 
       - name: Purge CDN cache
         run: |
-          for f in state_BTC state_ETH trades_BTC trades_ETH equity_BTC equity_ETH; do
+          for f in state_ETH trades_ETH equity_ETH; do
             curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/${f}.json" || true
           done
