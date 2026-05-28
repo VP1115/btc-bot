@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 
 STRATEGIES = {
     'aggressive': {
-        'rsi_oversold':    32,
-        'rsi_overbought':  68,
+        'rsi_oversold':    35,
+        'rsi_overbought':  65,
         'ma_short':         9,
         'ma_long':         21,
         'rsi_period':      14,
