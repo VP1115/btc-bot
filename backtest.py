@@ -99,6 +99,7 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90,
         'loss_trades':      0,
         'total_profit_eur': 0.0,
         'total_loss_eur':   0.0,
+        'last_exit_check':  None,
     }
 
     equity       = [starting_balance]
@@ -119,7 +120,9 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90,
         if forced:
             signal, reason = forced[0], forced[1]
         else:
-            signal, reasons, _ = get_signal(ind, strategy)
+            # funding_rate=None: historical funding data is unavailable in backtests.
+            # The funding rate filter is inactive here and only operates live.
+            signal, reasons, _ = get_signal(ind, strategy, state, i, None)
             reason = reasons[0] if reasons else ''
 
         # Apply slippage to execution price
@@ -147,10 +150,11 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90,
             eur_in   = coin_out * exec_price
             fee      = eur_in * fee_pct
             pnl      = eur_in - fee - coin_out * entry
-            state['balance']    += eur_in - fee
-            state['coin_held']   = 0.0
-            state['entry_price'] = None
-            state['trail_peak']  = None
+            state['balance']         += eur_in - fee
+            state['coin_held']        = 0.0
+            state['entry_price']      = None
+            state['trail_peak']       = None
+            state['last_exit_check']  = i  # mirrors execute_trade(); enables cooldown in backtest
             state['total_trades'] += 1
             state['sells']        += 1
             if pnl >= 0:

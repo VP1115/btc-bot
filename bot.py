@@ -458,17 +458,15 @@ def get_signal(ind, strategy, state=None, check_num=0, funding_rate=None):
         if at_upper_bb:  confirms.append(f'upper BB ({bb_hi:.2f})')
         reasons.append(f'RSI={rsi:.1f} + {" & ".join(confirms)} [{regime}]')
 
-    # Funding rate filter
+    # Funding rate filter — gates entries only (long-only bot; blocking exits is wrong)
     if funding_rate is not None:
         if signal == 'BUY' and funding_rate > FUNDING_THRESHOLD:
             return 'HOLD', [f'funding {funding_rate*100:.4f}% > {FUNDING_THRESHOLD*100:.3f}% — longs over-leveraged'], regime
-        if signal == 'SELL' and funding_rate < -FUNDING_THRESHOLD:
-            return 'HOLD', [f'funding {funding_rate*100:.4f}% < -{FUNDING_THRESHOLD*100:.3f}% — shorts over-leveraged'], regime
 
     # Cooldown: no re-entry for 4 checks after an exit
     if state is not None and signal == 'BUY':
         last_exit = state.get('last_exit_check')
-        if last_exit and (check_num - last_exit) < 4:
+        if last_exit is not None and (check_num - last_exit) < 4:
             return 'HOLD', [f'cooldown {check_num - last_exit}/4 checks since exit'], regime
 
     if not reasons:
