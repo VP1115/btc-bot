@@ -60,6 +60,16 @@ STRATEGIES = {
         'adx_min':        25,
         'desc': 'Conservative: 25% max, tight stops, strict RSI 30/70',
     },
+    'trend_follow': {
+        'stop_loss_pct':   0.05,   # hard floor -5%
+        'take_profit_pct': 0.20,   # let trends run +20%
+        'trail_trigger':   0.05,   # arm trail after +5%
+        'trail_pct':       0.03,   # trail 3% below peak
+        'risk_pct':        0.02,
+        'max_pos_pct':     0.80,
+        'adx_min':         0,      # not used in trend_follow path
+        'desc': 'Trend-follow: 50/200 SMA golden-cross entry, death-cross exit, price > SMA200',
+    },
 }
 
 BINANCE_BASE       = 'https://api.binance.com/api/v3'
@@ -351,6 +361,9 @@ def compute_indicators(ohlcv):
     rsi                              = calc_rsi(closes, 14)
     ma_s                             = calc_sma(closes, 9)
     ma_l                             = calc_sma(closes, 21)
+    sma50                            = calc_sma(closes, 50)
+    sma50_prev                       = calc_sma(closes[:-1], 50) if len(closes) > 50 else None
+    sma200                           = calc_sma(closes, 200)
     macd_v, macd_s, macd_h, bull, bear = calc_macd(closes)
     bb_lo, bb_mid, bb_hi             = calc_bbands(closes, 20, 2.0)
     atr                              = calc_atr(highs, lows, closes, 14)
@@ -363,6 +376,12 @@ def compute_indicators(ohlcv):
         'rsi':        round(rsi,  2) if rsi  is not None else None,
         'ma_short':   round(ma_s, 2) if ma_s is not None else None,
         'ma_long':    round(ma_l, 2) if ma_l is not None else None,
+        'sma50':      round(sma50,  2) if sma50  is not None else None,
+        'sma200':     round(sma200, 2) if sma200 is not None else None,
+        'golden_cross_50_200': (sma50 is not None and sma200 is not None and sma50_prev is not None
+                                and sma50 > sma200 and sma50_prev <= sma200),
+        'death_cross_50_200':  (sma50 is not None and sma200 is not None and sma50_prev is not None
+                                and sma50 < sma200 and sma50_prev >= sma200),
         'macd':       round(macd_v, 4) if macd_v is not None else None,
         'macd_sig':   round(macd_s, 4) if macd_s is not None else None,
         'macd_hist':  round(macd_h, 4) if macd_h is not None else None,
@@ -421,8 +440,34 @@ def get_signal(ind, strategy, state=None, check_num=0, funding_rate=None):
     """Returns (signal, reasons, regime). Stop/TP handled separately."""
     cfg    = STRATEGIES[strategy]
     price  = ind['price']
-    rsi    = ind.get('rsi')
     regime = get_regime(ind)
+
+    # ── Trend-following ──────────────────────────────────────────────────────────
+    if strategy == 'trend_follow':
+        sma50  = ind.get('sma50')
+        sma200 = ind.get('sma200')
+        if sma50 is None or sma200 is None:
+            return 'HOLD', ['warming up'], regime
+        signal, reasons = 'HOLD', []
+        if ind.get('golden_cross_50_200') and price > sma200:
+            signal = 'BUY'
+            reasons.append(f'Golden cross MA50({sma50:.2f}) > SMA200({sma200:.2f}) + above SMA200 [{regime}]')
+        elif ind.get('death_cross_50_200'):
+            signal = 'SELL'
+            reasons.append(f'Death cross MA50({sma50:.2f}) < SMA200({sma200:.2f}) [{regime}]')
+        if signal == 'BUY':
+            if funding_rate is not None and funding_rate > FUNDING_THRESHOLD:
+                return 'HOLD', [f'funding {funding_rate*100:.4f}% > {FUNDING_THRESHOLD*100:.3f}% — longs over-leveraged'], regime
+            if state is not None:
+                last_exit = state.get('last_exit_check')
+                if last_exit is not None and (check_num - last_exit) < 4:
+                    return 'HOLD', [f'cooldown {check_num - last_exit}/4 checks since exit'], regime
+        if not reasons:
+            reasons = ['no trigger']
+        return signal, reasons, regime
+
+    # ── Mean-reversion (aggressive, balanced, conservative) ──────────────────────
+    rsi = ind.get('rsi')
 
     if rsi is None:
         return 'HOLD', ['warming up'], regime
@@ -457,6 +502,12 @@ def get_signal(ind, strategy, state=None, check_num=0, funding_rate=None):
         if macd_bearish: confirms.append('MACD bearish')
         if at_upper_bb:  confirms.append(f'upper BB ({bb_hi:.2f})')
         reasons.append(f'RSI={rsi:.1f} + {" & ".join(confirms)} [{regime}]')
+
+    # SMA200 trend filter — no long entries in downtrend; exits still work in all regimes
+    if signal == 'BUY':
+        sma200 = ind.get('sma200')
+        if sma200 is not None and price <= sma200:
+            return 'HOLD', [f'price {price:.2f} <= SMA200 {sma200:.2f} — downtrend, no long entries'], regime
 
     # Funding rate filter — gates entries only (long-only bot; blocking exits is wrong)
     if funding_rate is not None:
@@ -730,8 +781,7 @@ def main():
     start    = state.get('starting_balance', starting_balance)
 
     state['max_checks'] = max_checks
-    if interval > 0:
-        state['interval'] = interval
+    state['interval']   = interval if interval > 0 else 3600
 
     # Migrations from v1 state files
     if 'btc_held' in state and 'coin_held' not in state:
@@ -780,7 +830,7 @@ def main():
             continue
 
         try:
-            ohlcv         = fetch_ohlcv(symbol, 200, timeframe)
+            ohlcv         = fetch_ohlcv(symbol, 250, timeframe)
             ind           = compute_indicators(ohlcv)
             price         = ind['price']
             funding_rate  = fetch_funding_rate(symbol)
