@@ -30,6 +30,7 @@ import sys, os, math, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import backtest_data
+import experiments
 from strategies import REGISTRY
 from bot import compute_indicators, check_stop_tp, calc_position_eur, MIN_TRADE_EUR
 
@@ -243,10 +244,13 @@ def run(strategy_name, ohlcv, n_folds=12, warmup=WARMUP, starting_balance=1000.0
 
 # ── reporting ─────────────────────────────────────────────────────────────────
 
-def report(strategy_name, results, summary):
+def report(strategy_name, results, summary, data_meta=None):
     """
     Print per-fold table, aggregate row, pass/fail criteria, and PASS/FAIL verdict.
     Returns the verdict string ('PASS' or 'FAIL').
+
+    If data_meta is provided ({symbol, interval, start, end, candles}), the run
+    is automatically appended to experiments.jsonl via experiments.log().
     """
     cfg  = REGISTRY[strategy_name][1]
     desc = cfg.get('desc', strategy_name)
@@ -309,6 +313,9 @@ def report(strategy_name, results, summary):
     print(f'  VERDICT: {verdict}')
     print(f'{"─" * W}')
 
+    if data_meta is not None:
+        experiments.log(strategy_name, REGISTRY[strategy_name][1], data_meta, summary, verdict)
+
     return verdict
 
 
@@ -342,14 +349,23 @@ def main():
           f'{backtest_data._date(ohlcv["times"][0])} → '
           f'{backtest_data._date(ohlcv["times"][-1])}')
 
-    all_results  = {}
+    data_meta = {
+        'symbol':   symbol,
+        'interval': interval,
+        'start':    backtest_data._date(ohlcv['times'][0]),
+        'end':      backtest_data._date(ohlcv['times'][-1]),
+        'candles':  n,
+        'warmup':   WARMUP,
+    }
+
+    all_results   = {}
     all_summaries = {}
     for name in names:
         all_results[name], all_summaries[name] = run(name, ohlcv)
 
     verdicts = {}
     for name in names:
-        verdicts[name] = report(name, all_results[name], all_summaries[name])
+        verdicts[name] = report(name, all_results[name], all_summaries[name], data_meta)
 
     print(f'\n{"=" * W}')
     print(f'  ★  = Sharpe>0  AND  PF>1.0  AND  ≥5 trades  (individual-fold bar)')
