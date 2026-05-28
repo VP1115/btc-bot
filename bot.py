@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 
 STRATEGIES = {
     'aggressive': {
-        'rsi_oversold':    40,
-        'rsi_overbought':  60,
+        'rsi_oversold':    32,
+        'rsi_overbought':  68,
         'ma_short':         9,
         'ma_long':         21,
         'rsi_period':      14,
@@ -26,8 +26,8 @@ STRATEGIES = {
         'trail_trigger':  0.03,   # arm trail after +3%
         'trail_pct':      0.02,   # trail 2% below peak
         'risk_pct':       0.02,   # risk 2% of portfolio per trade
-        'max_pos_pct':    0.90,   # cap at 90% of cash
-        'adx_min':        20,
+        'max_pos_pct':    0.60,   # cap at 60% of cash
+        'adx_min':        22,
         'desc': 'Aggressive: ATR-sized positions, trailing stops, multi-indicator',
     },
     'balanced': {
@@ -62,12 +62,20 @@ STRATEGIES = {
     },
 }
 
-BINANCE_BASE  = 'https://api.binance.com/api/v3'
-MIN_TRADE_EUR = 5.0
-FEE_PCT       = 0.00075   # 0.075% maker fee (Binance BNB discount)
-SLIPPAGE_PCT  = 0.0002    # 0.02% limit-order slippage
-STOP_FILE     = 'STOP'
-PAUSE_FILE    = 'PAUSE'
+BINANCE_BASE       = 'https://api.binance.com/api/v3'
+BINANCE_FUTURES    = 'https://fapi.binance.com/fapi/v1'
+MIN_TRADE_EUR      = 5.0
+FEE_PCT            = 0.00075   # 0.075% maker fee (Binance BNB discount)
+SLIPPAGE_PCT       = 0.0002    # 0.02% limit-order slippage
+FUNDING_THRESHOLD  = 0.0005    # 0.05% — skip longs above, skip shorts below negative
+STOP_FILE          = 'STOP'
+PAUSE_FILE         = 'PAUSE'
+
+FUTURES_SYMBOL_MAP = {
+    'BTCEUR': 'BTCUSDT', 'BTCUSDT': 'BTCUSDT',
+    'ETHEUR': 'ETHUSDT', 'ETHUSDT': 'ETHUSDT',
+    'SOLEUR': 'SOLUSDT', 'SOLUSDT': 'SOLUSDT',
+}
 
 BINANCE_INTERVAL_MAP = {'15m': '15m', '1h': '1h', '4h': '4h'}
 KRAKEN_INTERVAL_MAP  = {'15m': 15,    '1h': 60,   '4h': 240}
@@ -202,6 +210,17 @@ def _fetch_cryptocompare(symbol, limit, timeframe='1h'):
         raise RuntimeError(f'CryptoCompare: {data.get("Message")}')
     c = data['Data']['Data']
     return _pack([(x['open'], x['high'], x['low'], x['close'], x['volumefrom']) for x in c])
+
+def fetch_funding_rate(symbol):
+    """Returns current funding rate as decimal, or None on failure."""
+    futures_sym = FUTURES_SYMBOL_MAP.get(symbol)
+    if not futures_sym:
+        return None
+    try:
+        data = _get_json(f'{BINANCE_FUTURES}/premiumIndex?symbol={futures_sym}', retries=1)
+        return float(data.get('lastFundingRate', 0))
+    except Exception:
+        return None
 
 def fetch_ohlcv(symbol, limit=200, timeframe='1h'):
     for source, fn in [
@@ -398,7 +417,7 @@ def check_stop_tp(state, price, cfg):
 # Requires 2 confirmations to fire — RSI threshold PLUS one of MACD or BB.
 # This halves false signals vs single-trigger logic without touching stop/TP.
 
-def get_signal(ind, strategy):
+def get_signal(ind, strategy, state=None, check_num=0, funding_rate=None):
     """Returns (signal, reasons, regime). Stop/TP handled separately."""
     cfg    = STRATEGIES[strategy]
     price  = ind['price']
@@ -407,6 +426,10 @@ def get_signal(ind, strategy):
 
     if rsi is None:
         return 'HOLD', ['warming up'], regime
+
+    adx = ind.get('adx') or 0
+    if adx < cfg['adx_min']:
+        return 'HOLD', [f'ADX {adx:.1f} < {cfg["adx_min"]} — low conviction'], regime
 
     macd_h = ind.get('macd_hist') or 0
     bb_lo  = ind.get('bb_lo')
@@ -434,6 +457,19 @@ def get_signal(ind, strategy):
         if macd_bearish: confirms.append('MACD bearish')
         if at_upper_bb:  confirms.append(f'upper BB ({bb_hi:.2f})')
         reasons.append(f'RSI={rsi:.1f} + {" & ".join(confirms)} [{regime}]')
+
+    # Funding rate filter
+    if funding_rate is not None:
+        if signal == 'BUY' and funding_rate > FUNDING_THRESHOLD:
+            return 'HOLD', [f'funding {funding_rate*100:.4f}% > {FUNDING_THRESHOLD*100:.3f}% — longs over-leveraged'], regime
+        if signal == 'SELL' and funding_rate < -FUNDING_THRESHOLD:
+            return 'HOLD', [f'funding {funding_rate*100:.4f}% < -{FUNDING_THRESHOLD*100:.3f}% — shorts over-leveraged'], regime
+
+    # Cooldown: no re-entry for 4 checks after an exit
+    if state is not None and signal == 'BUY':
+        last_exit = state.get('last_exit_check')
+        if last_exit and (check_num - last_exit) < 4:
+            return 'HOLD', [f'cooldown {check_num - last_exit}/4 checks since exit'], regime
 
     if not reasons:
         reasons = ['no trigger']
@@ -500,6 +536,7 @@ def load_state(strategy, starting_balance):
         'last_rsi':         None,
         'last_signal':      None,
         'last_signal_time': None,
+        'last_exit_check':  None,
         'peak_value':       starting_balance,
         'trough_value':     starting_balance,
         'starting_balance': starting_balance,
@@ -562,12 +599,13 @@ def execute_trade(signal, state, price, ind, cfg, check_num, reasons):
         fee        = gross * FEE_PCT
         eur_in     = gross - fee
         pnl        = eur_in - coin_out * entry
-        state['coin_held']  -= coin_out
-        state['balance']    += eur_in
-        state['entry_price'] = None
-        state['trail_peak']  = None
-        state['total_trades'] += 1
-        state['sells']        += 1
+        state['coin_held']       -= coin_out
+        state['balance']         += eur_in
+        state['entry_price']      = None
+        state['trail_peak']       = None
+        state['last_exit_check']  = check_num
+        state['total_trades']    += 1
+        state['sells']           += 1
         if pnl >= 0:
             state['win_trades']       += 1
             state['total_profit_eur'] += pnl
@@ -705,6 +743,7 @@ def main():
         ('win_trades', 0), ('loss_trades', 0),
         ('total_profit_eur', 0.0), ('total_loss_eur', 0.0),
         ('last_signal', None), ('last_signal_time', None),
+        ('last_exit_check', None),
         ('daily_start_val', start),
         ('daily_start_date', datetime.now(timezone.utc).date().isoformat()),
     ]:
@@ -743,9 +782,10 @@ def main():
             continue
 
         try:
-            ohlcv = fetch_ohlcv(symbol, 200, timeframe)
-            ind   = compute_indicators(ohlcv)
-            price = ind['price']
+            ohlcv         = fetch_ohlcv(symbol, 200, timeframe)
+            ind           = compute_indicators(ohlcv)
+            price         = ind['price']
+            funding_rate  = fetch_funding_rate(symbol)
 
             # Update trailing peak
             if state['coin_held'] > 1e-9 and state.get('trail_peak') is not None:
@@ -756,7 +796,7 @@ def main():
             if forced:
                 signal, reasons, regime = forced[0], [forced[1]], get_regime(ind)
             else:
-                signal, reasons, regime = get_signal(ind, strategy)
+                signal, reasons, regime = get_signal(ind, strategy, state, check_num, funding_rate)
 
             portfolio = state['balance'] + state['coin_held'] * price
             log.info(
@@ -764,10 +804,11 @@ def main():
                 f'MACD_h: {str(ind.get("macd_hist")):>8}  '
                 f'ADX: {str(ind.get("adx")):>5}  Regime: {regime}'
             )
+            fr_str = f'{funding_rate*100:.4f}%' if funding_rate is not None else 'N/A'
             log.info(
                 f'  BB: {str(ind.get("bb_lo")):>10} / {str(ind.get("bb_hi")):>10}  '
                 f'ATR: {str(ind.get("atr")):>8} ({str(ind.get("atr_pct"))}%)  '
-                f'Signal: {signal}'
+                f'Funding: {fr_str}  Signal: {signal}'
             )
             log.info(f'  Portfolio: €{portfolio:>10,.2f}  '
                      f'(cash €{state["balance"]:,.2f} + coin €{state["coin_held"]*price:,.2f})')
