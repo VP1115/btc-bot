@@ -3,14 +3,14 @@
   "symbol": "ETHEUR",
   "balance": 204.38160628509445,
   "coin_held": 1.0285314031122983,
-  "checks_done": 530,
+  "checks_done": 531,
   "total_trades": 13,
   "buys": 5,
   "sells": 8,
   "start_time": "2026-05-24T20:08:51.057938+00:00",
-  "last_check": "2026-05-28T08:01:05.178754+00:00",
-  "last_price": 1713.96,
-  "last_rsi": 30.08,
+  "last_check": "2026-05-28T09:01:00.465057+00:00",
+  "last_price": 1710.44,
+  "last_rsi": 29.45,
   "peak_value": 2051.2948762257865,
   "trough_value": 1955.43574945572,
   "starting_balance": 2000.0,
@@ -27,5 +27,6 @@
   "daily_start_val": 1996.4021552416827,
   "daily_start_date": "2026-05-28",
   "last_regime": "TRENDING",
-  "timeframe": "1h"
+  "timeframe": "1h",
+  "last_exit_check": null
 }
