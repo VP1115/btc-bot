@@ -27,7 +27,7 @@ STRATEGIES = {
         'trail_pct':      0.02,   # trail 2% below peak
         'risk_pct':       0.02,   # risk 2% of portfolio per trade
         'max_pos_pct':    0.60,   # cap at 60% of cash
-        'adx_min':        22,
+        'adx_min':        20,
         'desc': 'Aggressive: ATR-sized positions, trailing stops, multi-indicator',
     },
     'balanced': {

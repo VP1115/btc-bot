@@ -34,7 +34,9 @@ jobs:
           echo "ETH: $BEFORE -> $AFTER"
           [ "$BEFORE" != "$AFTER" ] || (cat bot_ETH.log | tail -10 && exit 1)
 
+      # SOL disabled 2026-05 — Sharpe 0.30, fails risk-adjusted threshold. Re-enable only with SOL-specific tuning.
       - name: Run SOL check
+        if: false
         continue-on-error: true
         run: |
           BEFORE=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])")
@@ -47,18 +49,17 @@ jobs:
         run: |
           git config user.name  "btcbot"
           git config user.email "btcbot@noreply.github.com"
-          git add state_BTC.json state_ETH.json state_SOL.json \
-                  trades_BTC.json trades_ETH.json trades_SOL.json \
-                  equity_BTC.json equity_ETH.json equity_SOL.json || true
+          git add state_BTC.json state_ETH.json \
+                  trades_BTC.json trades_ETH.json \
+                  equity_BTC.json equity_ETH.json || true
           git diff --staged --quiet && echo "No changes" && exit 0
           BTC=$(python3 -c "import json; print(json.load(open('state_BTC.json'))['checks_done'])")
           ETH=$(python3 -c "import json; print(json.load(open('state_ETH.json'))['checks_done'])")
-          SOL=$(python3 -c "import json; print(json.load(open('state_SOL.json'))['checks_done'])" 2>/dev/null || echo "?")
-          git commit -m "bot: BTC=$BTC ETH=$ETH SOL=$SOL"
+          git commit -m "bot: BTC=$BTC ETH=$ETH"
           git push || (git pull --rebase && git push)
 
       - name: Purge CDN cache
         run: |
-          for f in state_BTC state_ETH state_SOL trades_BTC trades_ETH trades_SOL equity_BTC equity_ETH equity_SOL; do
+          for f in state_BTC state_ETH trades_BTC trades_ETH equity_BTC equity_ETH; do
             curl -s "https://purge.jsdelivr.net/gh/VP1115/btc-bot@main/${f}.json" || true
           done
