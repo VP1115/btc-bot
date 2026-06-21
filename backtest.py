@@ -28,6 +28,60 @@ DEFAULT_FEE      = 0.00075   # 0.075% per side
 DEFAULT_SLIPPAGE = 0.0002    # 0.02% (limit orders)
 TAKER_FEE        = 0.001     # 0.1% per side
 
+
+# ── Statistical significance ───────────────────────────────────────────────────
+
+def calc_stats(daily_rets, sharpe):
+    """
+    Compute statistical significance metrics for a backtest run.
+
+    Parameters
+    ----------
+    daily_rets : list of float — one return observation per trading day
+    sharpe     : float — annualised Sharpe ratio already computed by the caller
+
+    Returns
+    -------
+    dict with keys: n, mean, std, t_stat, p_value, sharpe_ci_lo, sharpe_ci_hi
+
+    Formulas
+    --------
+    SE(Sharpe)  = sqrt((1 + 0.5 * sharpe^2) / n)   [Jobson-Korkie approximation]
+    CI          = sharpe ± 1.96 * SE                 [95% two-sided]
+    t-stat      = mean / (std / sqrt(n))             [one-sample t-test, H0: mean=0]
+    p-value     = erfc(|t| / sqrt(2))                [two-tailed, normal approximation]
+    """
+    n = len(daily_rets)
+    if n < 30:
+        print(f'  ⚠  WARNING: only {n} daily observations — '
+              f'sample too small for reliable inference (need ≥ 30)')
+    if n < 2:
+        return {
+            'n': n, 'mean': 0.0, 'std': 0.0,
+            't_stat': 0.0, 'p_value': 1.0,
+            'sharpe_ci_lo': sharpe, 'sharpe_ci_hi': sharpe,
+        }
+
+    mean = sum(daily_rets) / n
+    std  = (sum((r - mean) ** 2 for r in daily_rets) / (n - 1)) ** 0.5  # sample std
+    t    = mean / (std / n ** 0.5) if std > 0 else 0.0
+    p    = math.erfc(abs(t) / math.sqrt(2))
+
+    se    = ((1 + 0.5 * sharpe ** 2) / n) ** 0.5
+    ci_lo = sharpe - 1.96 * se
+    ci_hi = sharpe + 1.96 * se
+
+    return {
+        'n':             n,
+        'mean':          mean,
+        'std':           std,
+        't_stat':        t,
+        'p_value':       p,
+        'sharpe_ci_lo':  ci_lo,
+        'sharpe_ci_hi':  ci_hi,
+    }
+
+
 # ── Data fetching ──────────────────────────────────────────────────────────────
 
 def fetch_history(symbol, timeframe='1h', days=90):
@@ -198,6 +252,7 @@ def run_backtest(strategy, symbol, starting_balance=1000.0, days=90,
 
     _print_results(strategy, symbol, starting_balance, final_val, total_ret,
                    sharpe, max_dd, state, win_rate, pf, buy_hold, fee_label, timeframe)
+    _print_stats(calc_stats(daily_rets, sharpe))
     _ascii_chart(equity, width=60, height=14, timeframe=timeframe)
     return {
         'total_return_pct':  total_ret,
@@ -226,6 +281,42 @@ def _print_results(strategy, symbol, start, final, ret, sharpe, max_dd,
     print(f'  Win Rate        : {win_rate:>7.0f}%  ({state["win_trades"]}W / {state["loss_trades"]}L)')
     print(f'  Profit Factor   : {pf:>7.2f}')
     print(f'{"="*54}')
+
+def _print_stats(stats):
+    n     = stats['n']
+    mean  = stats['mean']
+    std   = stats['std']
+    t     = stats['t_stat']
+    p     = stats['p_value']
+    ci_lo = stats['sharpe_ci_lo']
+    ci_hi = stats['sharpe_ci_hi']
+
+    if p < 0.01:
+        sig_note  = 'significant at 0.01'
+        inference = 'STRONG — p < 0.01'
+    elif p < 0.05:
+        sig_note  = 'significant at 0.05'
+        inference = 'SIGNIFICANT — p < 0.05'
+    elif p < 0.10:
+        sig_note  = 'not significant at 0.05'
+        inference = 'WEAK — p < 0.10, treat with caution'
+    else:
+        sig_note  = 'not significant at 0.05'
+        inference = 'NOT SIGNIFICANT — p > 0.10, results likely noise'
+
+    W = 54
+    print(f'\n{"=" * W}')
+    print(f'  Statistical Significance')
+    print(f'{"=" * W}')
+    print(f'  Observations (daily)  : {n:>5}')
+    print(f'  Mean daily return     : {mean * 100:>+7.3f}%')
+    print(f'  Std daily return      : {std  * 100:>7.3f}%')
+    print(f'  t-statistic           : {t:>6.2f}')
+    print(f'  p-value (two-tailed)  : {p:>7.3f}   ({sig_note})')
+    print(f'  Sharpe 95% CI         :  [{ci_lo:.2f}, {ci_hi:.2f}]')
+    print(f'  Inference             :  {inference}')
+    print(f'{"=" * W}')
+
 
 def _ascii_chart(equity, width=60, height=14, timeframe='1h'):
     if not equity:

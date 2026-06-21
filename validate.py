@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import backtest_data
 import experiments
-from strategies import REGISTRY
+from strategies import REGISTRY, REQUIRES_FUNDING
 from bot import compute_indicators, check_stop_tp, calc_position_eur, MIN_TRADE_EUR
 
 
@@ -55,6 +55,32 @@ CPD          = 24 // CANDLE_H   # candles per day = 6
 
 def _ts(ms):
     return datetime.datetime.utcfromtimestamp(ms / 1000).strftime('%Y-%m-%d')
+
+
+def _fold_stats(daily_rets, sharpe):
+    """
+    t-stat, two-tailed p-value, and Sharpe 95% CI for one fold's daily returns.
+    No print side-effects — caller decides what to display.
+
+    SE(Sharpe)  = sqrt((1 + 0.5 * sharpe^2) / n)   [Jobson-Korkie approximation]
+    t-stat      = mean / (sample_std / sqrt(n))      [one-sample t-test, H0: mean=0]
+    p-value     = erfc(|t| / sqrt(2))                [two-tailed, normal approximation]
+    """
+    n = len(daily_rets)
+    if n < 2:
+        return {'t_stat': 0.0, 'p_value': 1.0,
+                'sharpe_ci_lo': sharpe, 'sharpe_ci_hi': sharpe}
+    mu  = sum(daily_rets) / n
+    sig = (sum((r - mu) ** 2 for r in daily_rets) / (n - 1)) ** 0.5  # sample std
+    t   = mu / (sig / n ** 0.5) if sig > 0 else 0.0
+    p   = math.erfc(abs(t) / math.sqrt(2))
+    se  = ((1 + 0.5 * sharpe ** 2) / n) ** 0.5
+    return {
+        't_stat':        t,
+        'p_value':       p,
+        'sharpe_ci_lo':  sharpe - 1.96 * se,
+        'sharpe_ci_hi':  sharpe + 1.96 * se,
+    }
 
 
 # ── fold simulation ───────────────────────────────────────────────────────────
@@ -86,8 +112,11 @@ def _simulate_fold(signal_fn, cfg, fold_ohlcv, warmup_len, starting_balance):
     prev_day_val = starting_balance
 
     for i in range(warmup_len, n):
-        window = {k: v[:i + 1] for k, v in fold_ohlcv.items() if k != 'times'}
+        window = {k: v[:i + 1] for k, v in fold_ohlcv.items()
+                  if k not in ('times', 'funding')}
         ind    = compute_indicators(window)
+        if 'funding' in fold_ohlcv:
+            ind['funding_rate'] = fold_ohlcv['funding'][i]
         price  = ind['price']
 
         # Update trailing peak on open positions
@@ -165,13 +194,18 @@ def _simulate_fold(signal_fn, cfg, fold_ohlcv, warmup_len, starting_balance):
     pf       = (state['total_profit_eur'] /
                 max(state['total_loss_eur'], 1e-9))
 
+    fs = _fold_stats(daily_rets, sharpe)
     return {
-        'return_pct': ret_pct,
-        'sharpe':     sharpe,
-        'max_dd':     max_dd * 100,
-        'trades':     state['total_trades'],
-        'win_rate':   win_rate,
-        'pf':         min(pf, 9999.0),
+        'return_pct':    ret_pct,
+        'sharpe':        sharpe,
+        'max_dd':        max_dd * 100,
+        'trades':        state['total_trades'],
+        'win_rate':      win_rate,
+        'pf':            min(pf, 9999.0),
+        't_stat':        fs['t_stat'],
+        'p_value':       fs['p_value'],
+        'sharpe_ci_lo':  fs['sharpe_ci_lo'],
+        'sharpe_ci_hi':  fs['sharpe_ci_hi'],
     }
 
 
@@ -258,7 +292,7 @@ def report(strategy_name, results, summary, data_meta=None):
     n_folds = summary['n_folds']
     fsz     = summary['fold_candles']
     days    = summary['fold_days']
-    W       = 92
+    W       = 108
 
     print(f'\n{"─" * W}')
     print(f'  {strategy_name.upper()}')
@@ -266,7 +300,8 @@ def report(strategy_name, results, summary, data_meta=None):
     print(f'  {n_folds} folds × {fsz} candles ({days:.0f} days ≈ {days / 30:.1f} months per fold)')
     print(f'{"─" * W}')
     print(f'{"Fold":<5} {"Period":<25} {"Return":>8} {"Sharpe":>7} '
-          f'{"WinRate":>8} {"Trades":>7} {"MaxDD":>7} {"PF":>7} {"B&H":>8}')
+          f'{"WinRate":>8} {"Trades":>7} {"MaxDD":>7} {"PF":>7} {"B&H":>8}'
+          f' {"t-stat":>7} {"p":>7}')
     print('─' * W)
 
     for k, r in enumerate(results):
@@ -276,7 +311,8 @@ def report(strategy_name, results, summary, data_meta=None):
         period  = f'{_ts(r["t_start"])} → {_ts(r["t_end"])}'
         print(f'{k + 1:<5} {period:<25} {r["return_pct"]:>+7.2f}% {r["sharpe"]:>7.2f} '
               f'{r["win_rate"]:>7.0f}% {r["trades"]:>7} {r["max_dd"]:>6.1f}% '
-              f'{r["pf"]:>7.2f} {r["bh"]:>+7.2f}%{flag}')
+              f'{r["pf"]:>7.2f} {r["bh"]:>+7.2f}%'
+              f' {r["t_stat"]:>+7.2f} {r["p_value"]:>7.3f}{flag}')
 
     ms  = summary['mean_sharpe']
     psp = summary['pos_sharpe']
@@ -335,7 +371,7 @@ def main():
     interval = '4h'
     start    = '2020-01-01'
 
-    W = 92
+    W = 108
     print(f'{"=" * W}')
     print(f'  Walk-Forward Validation | {symbol} {interval} | WARMUP={WARMUP}')
     print(f'  PASS: mean Sharpe>{PASS_CRITERIA["min_mean_sharpe"]}  AND  '
@@ -345,9 +381,20 @@ def main():
 
     ohlcv = backtest_data.fetch(symbol, interval, start_date=start, force_refresh=refresh)
     n = len(ohlcv['closes'])
-    print(f'Data  {n} candles  '
+    print(f'OHLCV    {n} candles  '
           f'{backtest_data._date(ohlcv["times"][0])} → '
           f'{backtest_data._date(ohlcv["times"][-1])}')
+
+    # Fetch and align funding data if any queued strategy requires it.
+    # This is done once, regardless of how many funding strategies are in the run.
+    funding     = None
+    ohlcv_fund  = ohlcv     # same object unless funding is available
+    if any(name in REQUIRES_FUNDING for name in names):
+        funding    = backtest_data.fetch_funding(symbol, force_refresh=refresh)
+        ohlcv_fund = {**ohlcv, 'funding': backtest_data.align_funding(ohlcv['times'], funding)}
+        print(f'Funding  {len(funding["times"])} events  '
+              f'{backtest_data._date(funding["times"][0])} → '
+              f'{backtest_data._date(funding["times"][-1])}')
 
     data_meta = {
         'symbol':   symbol,
@@ -361,11 +408,17 @@ def main():
     all_results   = {}
     all_summaries = {}
     for name in names:
-        all_results[name], all_summaries[name] = run(name, ohlcv)
+        ohlcv_use = ohlcv_fund if name in REQUIRES_FUNDING else ohlcv
+        all_results[name], all_summaries[name] = run(name, ohlcv_use)
 
     verdicts = {}
     for name in names:
-        verdicts[name] = report(name, all_results[name], all_summaries[name], data_meta)
+        dm = dict(data_meta)
+        if name in REQUIRES_FUNDING and funding is not None:
+            dm['funding_events'] = len(funding['times'])
+            dm['funding_start']  = backtest_data._date(funding['times'][0])
+            dm['funding_end']    = backtest_data._date(funding['times'][-1])
+        verdicts[name] = report(name, all_results[name], all_summaries[name], dm)
 
     print(f'\n{"=" * W}')
     print(f'  ★  = Sharpe>0  AND  PF>1.0  AND  ≥5 trades  (individual-fold bar)')
