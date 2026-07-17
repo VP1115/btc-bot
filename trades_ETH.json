@@ -155,5 +155,19 @@
     "pnl": -97.1105,
     "entry_price": 1787.0673,
     "reason": "STOP-LOSS -5.2% (entry=1787.07)"
+  },
+  {
+    "type": "BUY",
+    "check": 1604,
+    "timestamp": "2026-07-17T02:27:37.486930+00:00",
+    "price": 1617.353406,
+    "eur_spent": 1167.1956,
+    "fee": 0.8754,
+    "coin_bought": 0.72112886,
+    "balance_after": 778.1304,
+    "coin_after": 0.72112886,
+    "reason": "RSI=31.3 + lower BB (1617.32) [TRENDING]",
+    "atr": 11.4896,
+    "rsi": 31.26
   }
 ]
