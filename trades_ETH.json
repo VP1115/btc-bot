@@ -169,5 +169,19 @@
     "reason": "RSI=31.3 + lower BB (1617.32) [TRENDING]",
     "atr": 11.4896,
     "rsi": 31.26
+  },
+  {
+    "type": "SELL",
+    "check": 1632,
+    "timestamp": "2026-07-19T02:23:12.597812+00:00",
+    "price": 1632.233488,
+    "eur_received": 1176.1679,
+    "fee": 0.8828,
+    "coin_sold": 0.72112886,
+    "balance_after": 1954.2983,
+    "coin_after": 0.0,
+    "pnl": 9.8477,
+    "entry_price": 1617.3534,
+    "reason": "RSI=68.3 + upper BB (1633.72) [TRENDING]"
   }
 ]
